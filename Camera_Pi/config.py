@@ -1,7 +1,9 @@
 # config.py
+import os
 
 # Model
-MODEL = "yolo26n.pt"     # always YOLO26 nano
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+MODEL = os.path.join(PROJECT_ROOT, "yolo26n.pt")
 DEVICE = "cpu"           # Pi default
 
 # Input
