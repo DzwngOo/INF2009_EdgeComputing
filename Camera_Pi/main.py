@@ -1,10 +1,12 @@
 import time, config, threading, queue
 from inference_worker import inference_loop, InferenceResult
 from mqtt_worker import mqtt_publisher_loop
+from GUI_worker import gui_loop
 
 # ---------- shared state ----------
 STOP = threading.Event()
 PUBLISH_Q: queue.Queue[InferenceResult] = queue.Queue(maxsize=50)  # prevents RAM blow-up
+DISPLAY_Q = queue.Queue(maxsize=1)
 
 # ---------- main ----------
 def main():
@@ -23,7 +25,7 @@ def main():
     t_infer = threading.Thread(
         target=inference_loop,
         name="InferenceThread",
-        args=(PUBLISH_Q, STOP),
+        args=(PUBLISH_Q, STOP, DISPLAY_Q),
         kwargs={
         "fps": max_fps,
         "model_path": model_path,
@@ -31,7 +33,7 @@ def main():
         "source": source,
         "imgsz": imgsz,
         "conf": conf,
-        "debug_show": True # disable it on actual demo
+        "debug_show": False # disable it on actual demo
     },
         daemon=True,
     )
@@ -46,6 +48,9 @@ def main():
 
     t_infer.start()
     t_mqtt.start()
+
+    gui_loop(DISPLAY_Q, STOP)
+    t_infer.join()
 
     try:
         while True:

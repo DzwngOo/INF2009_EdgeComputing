@@ -31,6 +31,7 @@ def open_capture(source):
 def inference_loop(
     publish_q: queue.Queue,
     stop_evt: threading.Event,
+    display_q: queue.Queue | None = None,
     fps: float = 10.0,
     model_path: str = "",
     device: str = "cpu",
@@ -64,7 +65,6 @@ def inference_loop(
 
             ok, frame = cap.read()
             if not ok:
-                # camera ended / disconnected; exit thread
                 break
 
             # ---------- YOLO predict ----------
@@ -73,23 +73,15 @@ def inference_loop(
                 imgsz=imgsz,
                 conf=conf,
                 device=device,
+                classes=[0],      
+                max_det=50,       # cap max detection
                 verbose=False,
             )
             r0 = results[0]
 
-            # ---------- inference on GUI (only for debug, to keep low processing have it disabled) ----------
-            if debug_show:
-                annotated = r0.plot()
-                cv2.imshow("YOLO", annotated)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    stop_evt.set()
-                    break
-
             # person_count: count boxes (common for detection)
-            # If your model is segmentation/pose etc, adjust accordingly.
             if getattr(r0, "boxes", None) is not None and r0.boxes is not None:
                 person_count = int(len(r0.boxes))
-                # optional: confidence avg
                 try:
                     confs = r0.boxes.conf
                     confidence_avg = float(confs.mean().item()) if confs is not None and len(confs) else 0.0
@@ -98,6 +90,24 @@ def inference_loop(
             else:
                 person_count = 0
                 confidence_avg = 0.0
+
+            # ---------- inference on GUI (only for debug, to keep low processing have it disabled) ----------
+            # If GUI enabled, send annotated frame to main thread
+            if debug_show and display_q is not None:
+                annotated = r0.plot()
+                try:
+                    display_q.put_nowait(annotated)
+                except queue.Full:
+                    # drop old frame to keep it “live”
+                    try:
+                        _ = display_q.get_nowait()
+                    except queue.Empty:
+                        pass
+                    try:
+                        display_q.put_nowait(annotated)
+                    except queue.Full:
+                        pass
+
             # --------------------------------------------------------
 
             # ---------- FPS smoothing (ported from old code) ----------
@@ -132,7 +142,5 @@ def inference_loop(
     finally:
         try:
             cap.release()
-            if debug_show:
-                cv2.destroyAllWindows()
         except Exception:
             pass
