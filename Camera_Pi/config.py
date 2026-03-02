@@ -4,7 +4,8 @@ import os
 ##### CAMERA PI #####
 # Model
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-MODEL = os.path.join(PROJECT_ROOT, "yolo26n.pt")
+# MODEL = os.path.join(PROJECT_ROOT, "yolo26n.pt")
+MODEL = os.path.join(PROJECT_ROOT, "yolo26n_ncnn_model") # applied quantization on backend
 DEVICE = "cpu"           # Pi default
 # Input
 SOURCE = 0               # webcam index (e.g., /dev/video2)

@@ -42,7 +42,6 @@ def inference_loop(
 ):
     # init
     model = YOLO(model_path)
-    model.set_classes(["person"])
     cap = open_capture(source)
 
     prev_t = time.time()
