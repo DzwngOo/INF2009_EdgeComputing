@@ -42,6 +42,7 @@ def inference_loop(
 ):
     # init
     model = YOLO(model_path)
+    model.set_classes(["person"])
     cap = open_capture(source)
 
     prev_t = time.time()
@@ -54,8 +55,6 @@ def inference_loop(
 
     try:
         while not stop_evt.is_set():
-            loop_start = time.perf_counter()
-
             # ---------- pacing ----------
             if use_pacing:
                 now = time.perf_counter()
@@ -115,8 +114,6 @@ def inference_loop(
                 person_count=person_count,
                 capacity=40, #TODO: Get proper capacity
                 confidence_avg=confidence_avg,
-                # if you want to include fps, add a field in InferenceResult
-                # fps=float(fps_smooth),
             )
 
             # push newest; keep real-time by dropping old if full
