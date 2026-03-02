@@ -1,2 +1,3 @@
 __pycache__/
 yolo26n.pt
+yolo26n_ncnn_model/
