@@ -33,7 +33,7 @@ def main():
         "source": source,
         "imgsz": imgsz,
         "conf": conf,
-        "debug_show": False # disable it on actual demo
+        "debug_show": True # disable it on actual demo
     },
         daemon=True,
     )
