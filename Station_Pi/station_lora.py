@@ -57,7 +57,11 @@ class StationReceiver:
                 # print(f"[IGNORE] Received data from {received_id}, but looking for {self.active_train}.")
                 
         except (IndexError, ValueError):
-            print(f"[ERROR] Malformed packet received: {raw_data}")
+            # Ignore heartbeat/debug messages that are not valid data
+            if "Heartbeat" in raw_data or "Ping" in raw_data or "CRC" in raw_data:
+                 pass # Silently ignore these known debug packets
+            else:
+                 print(f"[ERROR] Malformed packet received: {raw_data}")
 
 def serial_listener(station, port_name):
     """Background thread to listen to real LoRa hardware"""
@@ -68,7 +72,7 @@ def serial_listener(station, port_name):
             if ser.in_waiting:
                 try:
                     line = ser.readline().decode('utf-8', errors='ignore').strip()
-                    # The firmware outputs: "[RX] Data: ID:T01|S:1 | RSSI: ..."
+                    # The firmware might output: "[RX] Data: ID:T01|S:1 | RSSI: ..."
                     if "[RX] Data: " in line:
                         # Extract just the payload part
                         parts = line.split("[RX] Data: ")
@@ -77,6 +81,9 @@ def serial_listener(station, port_name):
                             # Stop at the "|" RSSI delimiter if present
                             payload = payload_section.split(" | ")[0]
                             station.process_lora_packet(payload)
+                    # OR it might be raw transparent data: "ID:T01|S:1"
+                    elif line.startswith("ID:") and "|S:" in line:
+                        station.process_lora_packet(line)
                 except Exception as e:
                     print(f"[SERIAL ERROR] {e}")
             time.sleep(0.1)
