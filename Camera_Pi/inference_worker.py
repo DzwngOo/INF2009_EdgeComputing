@@ -1,4 +1,5 @@
 import queue, threading, time, cv2, json
+from config import ROIS
 from dataclasses import dataclass
 from ultralytics import YOLO
 
@@ -7,6 +8,7 @@ from ultralytics import YOLO
 class InferenceResult:
     ts_ms: int
     person_count: int
+    roi_counts: dict
     capacity: int
     confidence_avg: float
 
@@ -14,12 +16,16 @@ class InferenceResult:
         return json.dumps({
             "ts_ms": self.ts_ms,
             "person_count": self.person_count,
+            "roi_counts": self.roi_counts,
             "capacity": self.capacity,
             "confidence_avg": self.confidence_avg,
         })
 
 
 # ---------- inference functions ----------
+def point_in_polygon(point, polygon):
+    return cv2.pointPolygonTest(polygon, point, False) >= 0
+
 def open_capture(source):
     """Open a webcam index (int) or a video/stream path (str)."""
     cap = cv2.VideoCapture(int(source)) if isinstance(source, int) else cv2.VideoCapture(str(source))
@@ -79,22 +85,63 @@ def inference_loop(
             )
             r0 = results[0]
 
-            # person_count: count boxes (common for detection)
+            # count people in full frame and in ROI separately
+            full_frame_count = 0
+            roi_counts = {name: 0 for name in ROIS}
+            confidence_vals = []
+
             if getattr(r0, "boxes", None) is not None and r0.boxes is not None:
-                person_count = int(len(r0.boxes))
-                try:
-                    confs = r0.boxes.conf
-                    confidence_avg = float(confs.mean().item()) if confs is not None and len(confs) else 0.0
-                except Exception:
-                    confidence_avg = 0.0
+                for box in r0.boxes:
+                    full_frame_count += 1
+
+                    try:
+                        confidence_vals.append(float(box.conf[0].item()))
+                    except Exception:
+                        pass
+
+                    x1, y1, x2, y2 = box.xyxy[0].tolist()
+                    cx = int((x1 + x2) / 2)
+                    cy = int((y1 + y2) / 2)
+
+                    for roi_name, roi_poly in ROIS.items():
+                        if point_in_polygon((cx, cy), roi_poly):
+                            roi_counts[roi_name] += 1
+                confidence_avg = sum(confidence_vals) / len(confidence_vals) if confidence_vals else 0.0
             else:
-                person_count = 0
+                full_frame_count = 0
+                roi_counts = {name: 0 for name in ROIS}
                 confidence_avg = 0.0
 
             # ---------- inference on GUI (only for debug, to keep low processing have it disabled) ----------
             # If GUI enabled, send annotated frame to main thread
             if debug_show and display_q is not None:
                 annotated = r0.plot()
+                for roi_name, roi_poly in ROIS.items():
+                    cv2.polylines(annotated, [roi_poly], isClosed=True, color=(0, 255, 255), thickness=2)
+                # draw counts once
+                y = 30
+                cv2.putText(
+                    annotated,
+                    f"Full: {full_frame_count}",
+                    (20, y),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 255, 255),
+                    2
+                )
+                y += 30
+                for roi_name, count in roi_counts.items():
+                    cv2.putText(
+                        annotated,
+                        f"{roi_name}: {count}",
+                        (20, y),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (0, 255, 255),
+                        2
+                    )
+                    y += 30
+
                 try:
                     display_q.put_nowait(annotated)
                 except queue.Full:
@@ -117,10 +164,12 @@ def inference_loop(
             fps_smooth = inst_fps if fps_smooth == 0.0 else (0.9 * fps_smooth + 0.1 * inst_fps)
             # ---------------------------------------------------------
 
+
             # package metadata for MQTT thread
             result = InferenceResult(
                 ts_ms=int(now_s * 1000),
-                person_count=person_count,
+                person_count=full_frame_count,
+                roi_counts=roi_counts,
                 capacity=40, #TODO: Get proper capacity
                 confidence_avg=confidence_avg,
             )

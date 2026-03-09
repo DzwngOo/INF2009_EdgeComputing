@@ -1,6 +1,7 @@
 # config.py
 import os
 from pathlib import Path
+import numpy as np
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
@@ -17,6 +18,22 @@ IMGSZ = 320              # 320/416 for better FPS on Pi
 CONF = 0.25
 # Performance
 MAX_FPS = 10.0           # 0.0 = no throttle
+# ROI Size
+ROIS = {
+    "left_zone": np.array([
+        [50, 120],
+        [220, 120],
+        [220, 350],
+        [50, 350]
+    ], dtype=np.int32),
+
+    "right_zone": np.array([
+        [420, 120],
+        [590, 120],
+        [590, 350],
+        [420, 350]
+    ], dtype=np.int32)
+}
 
 ##### MQTT #####
 BROKER_HOST = "127.0.0.1"
