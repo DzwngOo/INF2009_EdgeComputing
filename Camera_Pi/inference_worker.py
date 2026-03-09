@@ -43,7 +43,7 @@ def inference_loop(
     device: str = "cpu",
     source=0,
     imgsz: int = 416,
-    conf: float = 0.35, #0.25 is default in YOLOv8, but can be tuned for better precision/recall balance
+    conf: float = 0.55, #0.25 is default in YOLOv8, but can be tuned for better precision/recall balance
     drop_old_on_full: bool = True,
     debug_show: bool = False
 ):
