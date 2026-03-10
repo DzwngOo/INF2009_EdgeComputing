@@ -19,6 +19,9 @@ class InferenceResult:
             "roi_counts": self.roi_counts,
             "capacity": self.capacity,
             "confidence_avg": self.confidence_avg,
+            "occupancy_ratio": self.occupancy_ratio,
+            "cabin_status": self.cabin_status,
+            
         })
 
 
@@ -32,6 +35,28 @@ def open_capture(source):
     if not cap.isOpened():
         raise RuntimeError(f"Failed to open source: {source}")
     return cap
+
+#DENNIS - helper function to compute occupancy ratio and status based on people count and capacity
+def compute_cabin_status(people_count, capacity):
+    if capacity <= 0:
+        return 0.0, "UNKNOWN"
+
+    ratio = people_count / capacity
+
+    if people_count == 0:
+        status = "EMPTY"
+    elif ratio < 0.25:
+        status = "LOW"
+    elif ratio < 0.6:
+        status = "MEDIUM"
+    elif ratio < 0.9:
+        status = "HIGH"
+    else:
+        status = "FULL"
+
+    return ratio, status
+
+
 
 # ---------- inference thread ----------
 def inference_loop(
@@ -164,14 +189,26 @@ def inference_loop(
             fps_smooth = inst_fps if fps_smooth == 0.0 else (0.9 * fps_smooth + 0.1 * inst_fps)
             # ---------------------------------------------------------
 
+            # DENNIS - compute occupancy ratio and status based on people count and capacity
+            capacity = 40
+            cabin_people = sum(roi_counts.values())
+
+            occupancy_ratio, cabin_status = compute_cabin_status(
+                cabin_people,
+                capacity
+            )
+
+
 
             # package metadata for MQTT thread
             result = InferenceResult(
                 ts_ms=int(now_s * 1000),
-                person_count=full_frame_count,
+                person_count=cabin_people,
                 roi_counts=roi_counts,
-                capacity=40, #TODO: Get proper capacity
+                capacity=capacity,
                 confidence_avg=confidence_avg,
+                occupancy_ratio=occupancy_ratio,
+                cabin_status=cabin_status,
             )
 
             # push newest; keep real-time by dropping old if full
