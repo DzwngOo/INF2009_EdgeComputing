@@ -11,6 +11,8 @@ class InferenceResult:
     roi_counts: dict
     capacity: int
     confidence_avg: float
+    occupancy_ratio: float
+    cabin_status: str
 
     def to_json(self) -> str:
         return json.dumps({
