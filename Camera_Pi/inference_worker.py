@@ -170,10 +170,6 @@ def inference_loop(
                     for roi_name, roi_poly in ROIS.items():
                         if point_in_polygon((cx, cy), roi_poly):
                             roi_counts[roi_name] += 1
-
-                    # for roi_name, roi_poly in ROIS.items():
-                    #     if point_in_polygon((cx, cy), roi_poly):
-                    #         roi_counts[roi_name] += 1
                 confidence_avg = sum(confidence_vals) / len(confidence_vals) if confidence_vals else 0.0
             else:
                 full_frame_count = 0
