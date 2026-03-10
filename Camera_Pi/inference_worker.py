@@ -70,7 +70,7 @@ def inference_loop(
     device: str = "cpu",
     source=0,
     imgsz: int = 416,
-    conf: float = 0.55, #0.25 is default in YOLOv8, but can be tuned for better precision/recall balance
+    conf: float = 0.45, #0.25 is default in YOLOv8, but can be tuned for better precision/recall balance
     drop_old_on_full: bool = True,
     debug_show: bool = False
 ):
@@ -118,17 +118,51 @@ def inference_loop(
             confidence_vals = []
 
             if getattr(r0, "boxes", None) is not None and r0.boxes is not None:
-                for box in r0.boxes:
-                    full_frame_count += 1
+                # for box in r0.boxes:
+                #     full_frame_count += 1
 
-                    try:
-                        confidence_vals.append(float(box.conf[0].item()))
-                    except Exception:
-                        pass
+                #     try:
+                #         confidence_vals.append(float(box.conf[0].item()))
+                #     except Exception:
+                #         pass
+
+                #     x1, y1, x2, y2 = box.xyxy[0].tolist()
+                #     cx = int((x1 + x2) / 2)
+                #     cy = int((y1 + y2) / 2)
+                frame_h, frame_w = frame.shape[:2]
+
+                for box in r0.boxes:
+
+                    score = float(box.conf[0].item())
+
+                    # STRICT CONFIDENCE FILTER
+                    if score < 0.60:
+                        continue
 
                     x1, y1, x2, y2 = box.xyxy[0].tolist()
+                    bw = x2 - x1
+                    bh = y2 - y1
+                    area = bw * bh
+
+                    # REMOVE VERY SMALL DETECTIONS
+                    if area < frame_w * frame_h * 0.01:
+                        continue
+
+                    # REMOVE WIDE OBJECTS (chairs, tables)
+                    aspect_ratio = bw / max(bh, 1)
+                    if aspect_ratio > 1.3:
+                        continue
+
+                    full_frame_count += 1
+                    confidence_vals.append(score)
+
+                    # use bottom center for ROI
                     cx = int((x1 + x2) / 2)
-                    cy = int((y1 + y2) / 2)
+                    cy = int(y2)
+
+                    for roi_name, roi_poly in ROIS.items():
+                        if point_in_polygon((cx, cy), roi_poly):
+                            roi_counts[roi_name] += 1
 
                     for roi_name, roi_poly in ROIS.items():
                         if point_in_polygon((cx, cy), roi_poly):
