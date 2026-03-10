@@ -7,17 +7,24 @@ from ultralytics import YOLO
 @dataclass
 class InferenceResult:
     ts_ms: int
-    person_count: int
+    # person_count: int
+    total_count: int
+    seated_count: int
+    standing_count: int
     roi_counts: dict
     capacity: int
     confidence_avg: float
     occupancy_ratio: float
     cabin_status: str
+    
 
     def to_json(self) -> str:
         return json.dumps({
             "ts_ms": self.ts_ms,
-            "person_count": self.person_count,
+            # "person_count": self.person_count,
+            "total_count": self.total_count,
+            "seated_count": self.seated_count,
+            "standing_count": self.standing_count,
             "roi_counts": self.roi_counts,
             "capacity": self.capacity,
             "confidence_avg": self.confidence_avg,
@@ -164,14 +171,17 @@ def inference_loop(
                         if point_in_polygon((cx, cy), roi_poly):
                             roi_counts[roi_name] += 1
 
-                    for roi_name, roi_poly in ROIS.items():
-                        if point_in_polygon((cx, cy), roi_poly):
-                            roi_counts[roi_name] += 1
+                    # for roi_name, roi_poly in ROIS.items():
+                    #     if point_in_polygon((cx, cy), roi_poly):
+                    #         roi_counts[roi_name] += 1
                 confidence_avg = sum(confidence_vals) / len(confidence_vals) if confidence_vals else 0.0
             else:
                 full_frame_count = 0
                 roi_counts = {name: 0 for name in ROIS}
                 confidence_avg = 0.0
+            # seated / standing split
+            seated_count = sum(roi_counts.values())
+            standing_count = max(0, full_frame_count - seated_count)
 
             # ---------- inference on GUI (only for debug, to keep low processing have it disabled) ----------
             # If GUI enabled, send annotated frame to main thread
@@ -183,7 +193,7 @@ def inference_loop(
                 y = 30
                 cv2.putText(
                     annotated,
-                    f"Full: {full_frame_count}",
+                    f"Total: {full_frame_count}",
                     (20, y),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.7,
@@ -191,6 +201,29 @@ def inference_loop(
                     2
                 )
                 y += 30
+
+                cv2.putText(
+                    annotated,
+                    f"Seated: {seated_count}",
+                    (20, y),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 255, 255),
+                    2
+                )
+                y += 30
+
+                cv2.putText(
+                    annotated,
+                    f"Standing: {standing_count}",
+                    (20, y),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 255, 255),
+                    2
+                )
+                y += 30
+
                 for roi_name, count in roi_counts.items():
                     cv2.putText(
                         annotated,
@@ -239,7 +272,10 @@ def inference_loop(
             # package metadata for MQTT thread
             result = InferenceResult(
                 ts_ms=int(now_s * 1000),
-                person_count=cabin_people,
+                #person_count=cabin_people,
+                total_count=full_frame_count,
+                seated_count=seated_count,
+                standing_count=standing_count,
                 roi_counts=roi_counts,
                 capacity=capacity,
                 confidence_avg=confidence_avg,
