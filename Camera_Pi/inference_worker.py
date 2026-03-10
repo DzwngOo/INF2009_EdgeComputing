@@ -227,7 +227,7 @@ def inference_loop(
 
             # DENNIS - compute occupancy ratio and status based on people count and capacity
             capacity = 40
-            cabin_people = sum(roi_counts.values())
+            cabin_people = full_frame_count
 
             occupancy_ratio, cabin_status = compute_cabin_status(
                 cabin_people,
