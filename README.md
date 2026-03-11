@@ -10,7 +10,7 @@ cd INF2009_EdgeComputing
 sudo apt update && sudo apt upgrade -y
 python3 -m venv --system-site-packages venv
 source venv/bin/activate
-pip install ultralytics ncnn
+pip install -r requirements.txt
 cd Camera_Pi
 python3 main.py
 ```
