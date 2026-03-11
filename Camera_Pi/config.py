@@ -36,6 +36,6 @@ ROIS = {
 }
 
 ##### MQTT #####
-BROKER_HOST = "127.0.0.1"
-BROKER_PORT = 1883
+BROKER_HOST = "172.20.10.2"
+BROKER_PORT = 1884
 TOPIC = "mrt/cabin1/vision"
