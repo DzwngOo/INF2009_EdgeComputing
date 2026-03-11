@@ -165,7 +165,7 @@ def inference_loop(
 
                     # use bottom center for ROI
                     cx = int((x1 + x2) / 2)
-                    cy = int(y2)
+                    cy = int((y1 + y2) / 2)
 
                     for roi_name, roi_poly in ROIS.items():
                         if point_in_polygon((cx, cy), roi_poly):
