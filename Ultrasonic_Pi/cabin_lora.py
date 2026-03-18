@@ -1,5 +1,4 @@
-import time
-import serial
+import time, serial, queue
 from ultrasonic import SonarSensor
 from mqtt import MqttSubscriberThread
 
@@ -30,12 +29,15 @@ def main(train_id="T01"):
     except Exception as e:
         print(f"[ERROR] Serial setup failed: {e}")
 
+    # Create a Queue to hold the data from MQTT
+    mqtt_queue = queue.Queue()
+
     try:
         sensor.start()
         print(f"Main System Started for {train_id}. Sensor runs in background.")
 
         # Start MQTT Subscriber in a separate thread
-        mqtt_thread = MqttSubscriberThread()
+        mqtt_thread = MqttSubscriberThread(mqtt_queue)
         mqtt_thread.start()
         
         while True:
@@ -55,6 +57,13 @@ def main(train_id="T01"):
             print(f"\n[20s Cycle] Transmitting to Station: {msg}")
             print(f"   L Raw Distance: {distance:.2f}cm")
             print(f"   L Interpretation: {status_desc} (<20cm is TAKEN)")
+            if not mqtt_queue.empty():
+                message_data = mqtt_queue.get()  # Retrieve the message from the queue
+                # print(f"[MQTT Data] Received: {message_data}")
+                print(f"   L Capacity: {message_data['capacity']}")
+                print(f"   L Confidence Average: {message_data['confidence_avg']}")
+                print(f"   L Occupancy Ratio: {message_data['occupancy_ratio']}")
+                print(f"   L Cabin Status: {message_data['cabin_status']}")
             
             # Send to LoRa module if connected
             if lora_serial:
