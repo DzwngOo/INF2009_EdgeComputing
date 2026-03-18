@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "Ultrasonic_Pi/ultrasonic_lora",
+		},
+		{
+			"path": "Station_Pi/station_lora",
+		}
+	],
+	"settings": {}
+}
