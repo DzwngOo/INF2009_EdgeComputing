@@ -1,7 +1,7 @@
 import time
 import serial
-import sys
 from ultrasonic import SonarSensor
+from mqtt import MqttSubscriberThread
 
 # This file represents your "Main Application Logic"
 # It runs on the main thread and imports the sensor driver
@@ -33,6 +33,10 @@ def main(train_id="T01"):
     try:
         sensor.start()
         print(f"Main System Started for {train_id}. Sensor runs in background.")
+
+        # Start MQTT Subscriber in a separate thread
+        mqtt_thread = MqttSubscriberThread()
+        mqtt_thread.start()
         
         while True:
             # --- YOUR MAIN LOGIC ---
