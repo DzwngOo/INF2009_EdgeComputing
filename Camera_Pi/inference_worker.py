@@ -11,7 +11,7 @@ class InferenceResult:
     total_count: int
     seated_count: int
     standing_count: int
-    roi_counts: dict
+    roi_presence: dict
     capacity: int
     confidence_avg: float
     occupancy_ratio: float
@@ -25,7 +25,7 @@ class InferenceResult:
             "total_count": self.total_count,
             "seated_count": self.seated_count,
             "standing_count": self.standing_count,
-            "roi_counts": self.roi_counts,
+            "roi_presence": self.roi_presence,
             "capacity": self.capacity,
             "confidence_avg": self.confidence_avg,
             "occupancy_ratio": self.occupancy_ratio,
@@ -65,7 +65,7 @@ def compute_cabin_status(people_count, capacity):
 
     return ratio, status
 
-def process_frame(frame, model, roi_counts, conf=0.45, img_size=416):
+def process_frame(frame, model, roi_presence, conf=0.45, img_size=416):
     """Process each frame: detect objects and count people in full frame and ROI."""
     results = model.predict(source=frame, imgsz=img_size, conf=conf, classes=[0], max_det=50, verbose=False)
     r0 = results[0]
@@ -99,12 +99,12 @@ def process_frame(frame, model, roi_counts, conf=0.45, img_size=416):
             cy = int((y1 + y2) / 2)
             for roi_name, roi_poly in ROIS.items():
                 if point_in_polygon((cx, cy), roi_poly):
-                    roi_counts[roi_name] += 1
+                    roi_presence[roi_name] = True
 
     confidence_avg = sum(confidence_vals) / len(confidence_vals) if confidence_vals else 0.0
-    return full_frame_count, roi_counts, confidence_avg, r0
+    return full_frame_count, roi_presence, confidence_avg, r0
 
-def annotate_frame(frame, r0, full_frame_count, seated_count, standing_count, roi_counts, debug_show=False):
+def annotate_frame(frame, r0, full_frame_count, seated_count, standing_count, roi_presence, debug_show=False):
     """Add annotations on frame for debugging."""
     if debug_show:
         y = 30
@@ -114,31 +114,29 @@ def annotate_frame(frame, r0, full_frame_count, seated_count, standing_count, ro
         y += 30
         cv2.putText(frame, f"Standing: {standing_count}", (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
         y += 30
-        for roi_name, count in roi_counts.items():
-            cv2.putText(frame, f"{roi_name}: {count}", (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
+        for roi_name, present in roi_presence.items():
+            cv2.putText(frame, f"{roi_name}: {present}", (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
             y += 30
 
-        # Draw ROI polygons in yellow
+        # False = yellow, True = blue
         for roi_name, roi_poly in ROIS.items():
-            cv2.polylines(frame, [roi_poly], isClosed=True, color=(0, 255, 255), thickness=2)
-
-        # Draw ROI polygons in yellow
-        for roi_name, roi_poly in ROIS.items():
-            cv2.polylines(frame, [roi_poly], isClosed=True, color=(0, 255, 255), thickness=2)
+            color = (255, 0, 0) if roi_presence[roi_name] else (0, 255, 255)
+            cv2.polylines(frame, [roi_poly], isClosed=True, color=color, thickness=2)
 
         # Draw bounding boxes for each detected person
-        for box in r0.boxes:
-            # Get bounding box coordinates and draw it on the frame
-            x1, y1, x2, y2 = box.xyxy[0].tolist()
+        if r0.boxes:
+            for box in r0.boxes:
+                # Get bounding box coordinates and draw it on the frame
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
 
-            # Draw the bounding box in blue (or any color you prefer)
-            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (255, 0, 0), 2)  # BGR color for blue
+                # Draw the bounding box in blue (or any color you prefer)
+                cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (255, 0, 0), 2)  # BGR color for blue
 
-            # Optionally, add confidence score on the bounding box
-            confidence = float(box.conf[0].item())
-            cv2.putText(frame, f"{confidence:.2f}", (int(x1), int(y1)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                # Optionally, add confidence score on the bounding box
+                confidence = float(box.conf[0].item())
+                cv2.putText(frame, f"{confidence:.2f}", (int(x1), int(y1)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
     return frame
-
 
 # ---------- inference thread ----------
 def inference_loop(
@@ -176,10 +174,10 @@ def inference_loop(
             if not ok:
                 break
 
-            roi_counts = {name: 0 for name in ROIS}
-            full_frame_count, roi_counts, confidence_avg, r0 = process_frame(frame, model, roi_counts, conf, imgsz)
+            roi_presence = {name: False for name in ROIS}   # start every ROI as False
+            full_frame_count, roi_presence, confidence_avg, r0 = process_frame(frame, model, roi_presence, conf, imgsz)
             # seated / standing split
-            seated_count = sum(roi_counts.values())
+            seated_count = sum(roi_presence.values())
             standing_count = max(0, full_frame_count - seated_count)
 
             # DENNIS - compute occupancy ratio and status based on people count and capacity
@@ -197,7 +195,7 @@ def inference_loop(
                 total_count=full_frame_count,
                 seated_count=seated_count,
                 standing_count=standing_count,
-                roi_counts=roi_counts,
+                roi_presence=roi_presence,
                 capacity=capacity,
                 confidence_avg=confidence_avg,
                 occupancy_ratio=occupancy_ratio,
@@ -221,7 +219,7 @@ def inference_loop(
             # ---------- inference on GUI (only for debug, to keep low processing have it disabled) ----------
             # Annotate and show frame if required
             if display_q is not None:
-                annotated_frame = annotate_frame(frame, r0, full_frame_count, seated_count, standing_count, roi_counts, debug_show)
+                annotated_frame = annotate_frame(frame, r0, full_frame_count, seated_count, standing_count, roi_presence, debug_show)
                 try:
                     display_q.put_nowait(annotated_frame)
                 except queue.Full:
