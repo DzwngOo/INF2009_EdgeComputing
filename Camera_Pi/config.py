@@ -20,14 +20,14 @@ CONF = 0.25
 MAX_FPS = 10.0           # 0.0 = no throttle
 # ROI Size
 ROIS = {
-    "left_zone": np.array([
+    "seat1": np.array([
         [50, 120],
         [220, 120],
         [220, 350],
         [50, 350]
     ], dtype=np.int32),
 
-    "right_zone": np.array([
+    "seat2": np.array([
         [420, 120],
         [590, 120],
         [590, 350],

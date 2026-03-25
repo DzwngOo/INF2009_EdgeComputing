@@ -39,21 +39,45 @@ class StationReceiver:
             return
 
         try:
-            # Parse the string "ID:T01|S:1"
-            parts = raw_data.split('|')
-            received_id = parts[0].split(':')[1]
-            received_status = int(parts[1].split(':')[1])
+            fields = {}
+            for part in raw_data.split('|'):
+                key, value = part.split(':', 1)
+                fields[key] = value
+            
+            received_id = fields['ID']
+            received_status = int(fields['S'])
+            capacity = int(fields['CAP'])
+            confidence_avg = float(fields['CONF'])
+            occupancy_ratio = float(fields['OCC'])
+            cabin_status = fields['CAB']
+            seat1_cam = int(fields['SEAT1_CAM'])
+            seat1_final = fields['SEAT1_FINAL']
 
-            # Logic: Only update if the ID matches the train at the platform
-            if received_id == self.active_train:
-                # Only print update if status changed or it's the first confirm
-                if self.seat_status != received_status:
-                    self.seat_status = received_status
-                    status_str = "TAKEN" if self.seat_status == 1 else "EMPTY"
-                    print(f"\n[UPDATE] Verified {received_id}: Seat is {status_str}")
-                    print("Station_Pi > ", end="", flush=True) # Reprint prompt
-            else:
-                pass 
+            print(f"\n[PARSED DATA]")
+            print(f"   L Train ID: {received_id}")
+            print(f"   L Ultrasonic Status: {'TAKEN' if received_status == 1 else 'EMPTY'}")
+            print(f"   L Capacity: {capacity}")
+            print(f"   L Confidence Average: {confidence_avg:.3f}")
+            print(f"   L Occupancy Ratio: {occupancy_ratio:.3f}")
+            print(f"   L Cabin Status: {cabin_status}")
+            print(f"   L Camera Seat 1: {'TAKEN' if seat1_cam == 1 else 'EMPTY'}")
+            print(f"   L Final Seat 1: {seat1_final}")
+
+            # Parse the string "ID:T01|S:1"
+            # parts = raw_data.split('|')
+            # received_id = parts[0].split(':')[1]
+            # received_status = int(parts[1].split(':')[1])
+
+            # # Logic: Only update if the ID matches the train at the platform
+            # if received_id == self.active_train:
+            #     # Only print update if status changed or it's the first confirm
+            #     if self.seat_status != received_status:
+            #         self.seat_status = received_status
+            #         status_str = "TAKEN" if self.seat_status == 1 else "EMPTY"
+            #         print(f"\n[UPDATE] Verified {received_id}: Seat is {status_str}")
+            #         print("Station_Pi > ", end="", flush=True) # Reprint prompt
+            # else:
+            #     pass 
                 # print(f"[IGNORE] Received data from {received_id}, but looking for {self.active_train}.")
                 
         except (IndexError, ValueError):
