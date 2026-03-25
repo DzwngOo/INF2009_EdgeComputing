@@ -1,12 +1,11 @@
-import time
-import serial
-import threading
-import sys
+import time, serial, threading, sys
+from dashboard_web.app import DashboardState, create_flask_app, flask_thread
 
 class StationReceiver:
-    def __init__(self):
+    def __init__(self, dashboard_state):
         self.active_train = None
         self.seat_status = None # None means unconfirmed
+        self.dashboard_state = dashboard_state
 
     def handle_arrival(self, train_id):
         """Simulate a train arriving and locking onto its signal."""
@@ -15,6 +14,17 @@ class StationReceiver:
         self.active_train = train_id
         self.seat_status = None
 
+        self.dashboard_state.update(
+            active_train=train_id,
+            ultrasonic_status="UNKNOWN",
+            capacity=None,
+            confidence_avg=None,
+            occupancy_ratio=None,
+            cabin_status=None,
+            seat1_cam="UNKNOWN",
+            seat1_final=None
+        )
+
     def handle_departure(self):
         """Simulate the train leaving."""
         if self.active_train:
@@ -22,6 +32,17 @@ class StationReceiver:
             print("[SYSTEM] Closing link. Returning to IDLE mode.")
             self.active_train = None
             self.seat_status = None
+
+            self.dashboard_state.update(
+                active_train=None,
+                ultrasonic_status="UNKNOWN",
+                capacity=None,
+                confidence_avg=None,
+                occupancy_ratio=None,
+                cabin_status=None,
+                seat1_cam="UNKNOWN",
+                seat1_final=None
+            )
         else:
             print("[ERROR] No train is currently at the platform.")
 
@@ -53,6 +74,9 @@ class StationReceiver:
             seat1_cam = int(fields['SEAT1_CAM'])
             seat1_final = fields['SEAT1_FINAL']
 
+            ultrasonic_text = "TAKEN" if received_status == 1 else "EMPTY"
+            seat1_cam_text = "TAKEN" if seat1_cam == 1 else "EMPTY"
+
             print(f"\n[PARSED DATA]")
             print(f"   L Train ID: {received_id}")
             print(f"   L Ultrasonic Status: {'TAKEN' if received_status == 1 else 'EMPTY'}")
@@ -63,22 +87,20 @@ class StationReceiver:
             print(f"   L Camera Seat 1: {'TAKEN' if seat1_cam == 1 else 'EMPTY'}")
             print(f"   L Final Seat 1: {seat1_final}")
 
-            # Parse the string "ID:T01|S:1"
-            # parts = raw_data.split('|')
-            # received_id = parts[0].split(':')[1]
-            # received_status = int(parts[1].split(':')[1])
-
-            # # Logic: Only update if the ID matches the train at the platform
-            # if received_id == self.active_train:
-            #     # Only print update if status changed or it's the first confirm
-            #     if self.seat_status != received_status:
-            #         self.seat_status = received_status
-            #         status_str = "TAKEN" if self.seat_status == 1 else "EMPTY"
-            #         print(f"\n[UPDATE] Verified {received_id}: Seat is {status_str}")
-            #         print("Station_Pi > ", end="", flush=True) # Reprint prompt
-            # else:
-            #     pass 
-                # print(f"[IGNORE] Received data from {received_id}, but looking for {self.active_train}.")
+            # Update dashboard only if packet matches active train
+            if received_id == self.active_train:
+                self.dashboard_state.update(
+                    active_train=received_id,
+                    ultrasonic_status=ultrasonic_text,
+                    capacity=capacity,
+                    confidence_avg=confidence_avg,
+                    occupancy_ratio=occupancy_ratio,
+                    cabin_status=cabin_status,
+                    seat1_cam=seat1_cam_text,
+                    seat1_final=seat1_final
+                )
+            else:
+                print(f"[IGNORE] Packet train ID {received_id} does not match active train {self.active_train}")
                 
         except (IndexError, ValueError):
             # Ignore heartbeat/debug messages that are not valid data
@@ -116,7 +138,13 @@ def serial_listener(station, port_name):
 
 
 def main():
-    station = StationReceiver()
+    dashboard_state = DashboardState()
+    station = StationReceiver(dashboard_state)
+
+    # Start Flask in background thread
+    app = create_flask_app(dashboard_state)
+    web_thread = threading.Thread(target=flask_thread, args=(app,), daemon=True)
+    web_thread.start()
     
     # Try to start serial listener in background
     # Raspbian typically uses /dev/ttyACM0 or USB0 for Arduinos
