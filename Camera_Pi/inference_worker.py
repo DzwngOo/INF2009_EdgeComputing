@@ -7,7 +7,9 @@ from ultralytics import YOLO
 @dataclass
 class InferenceResult:
     ts_ms: int
-    # person_count: int
+    camera_id: str                      # ADDED: identify which Camera Pi this message came from
+    cam_ok: int                         # ADDED: 1 = camera/inference path healthy, 0 = failed
+    cam_status: str                     # ADDED: status string, e.g. OK / CAM_READ_FAIL / MODEL_LOAD_FAIL
     total_count: int
     seated_count: int
     standing_count: int
@@ -21,7 +23,9 @@ class InferenceResult:
     def to_json(self) -> str:
         return json.dumps({
             "ts_ms": self.ts_ms,
-            # "person_count": self.person_count,
+            "camera_id": self.camera_id,      # ADDED
+            "cam_ok": self.cam_ok,            # ADDED
+            "cam_status": self.cam_status,    # ADDED
             "total_count": self.total_count,
             "seated_count": self.seated_count,
             "standing_count": self.standing_count,
@@ -32,6 +36,44 @@ class InferenceResult:
             "cabin_status": self.cabin_status,
             
         })
+    
+# ---------- helper to build health/error payload ----------
+# ADDED: used when camera or inference fails, so broker still gets a valid JSON health message
+def build_camera_status_result(camera_id: str, cam_ok: int, cam_status: str) -> InferenceResult:
+    return InferenceResult(
+        ts_ms=int(time.time() * 1000),
+        camera_id=camera_id,
+        cam_ok=cam_ok,
+        cam_status=cam_status,
+        total_count=0,
+        seated_count=0,
+        standing_count=0,
+        roi_presence={name: False for name in ROIS},
+        capacity=-1,
+        confidence_avg=0.0,
+        occupancy_ratio=-1.0,
+        cabin_status="UNKNOWN",
+    )
+
+# ---------- helper to safely publish status/error payload ----------
+# ADDED: tries to push a failure/health message into MQTT queue without crashing
+def publish_status_result(
+    publish_q: queue.Queue,
+    result: InferenceResult,
+    drop_old_on_full: bool = True
+):
+    try:
+        publish_q.put_nowait(result)
+    except queue.Full:
+        if drop_old_on_full:
+            try:
+                _ = publish_q.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                publish_q.put_nowait(result)
+            except queue.Full:
+                pass
 
 
 # ---------- inference functions ----------
@@ -150,11 +192,30 @@ def inference_loop(
     imgsz: int = 416,
     conf: float = 0.45, #0.25 is default in YOLOv8, but can be tuned for better precision/recall balance
     drop_old_on_full: bool = True,
-    debug_show: bool = False
+    debug_show: bool = False,
+    camera_id: str = "cam1",                    # ADDED: identify this Camera Pi in MQTT payload (to be edited)
 ):
     # init
-    model = YOLO(model_path)
-    cap = open_capture(source)
+    # model = YOLO(model_path)
+    # cap = open_capture(source)
+    cap = None
+    try:
+            model = YOLO(model_path)
+    except Exception as e:
+        error_result = build_camera_status_result(camera_id, 0, f"MODEL_LOAD_FAIL:{e}")
+        publish_status_result(publish_q, error_result, drop_old_on_full)
+        print(f"[CAMERA ERROR] {camera_id} model load failed: {e}")
+        stop_evt.set()
+        return
+
+    try:
+        cap = open_capture(source)
+    except Exception as e:
+        error_result = build_camera_status_result(camera_id, 0, f"CAM_OPEN_FAIL:{e}")
+        publish_status_result(publish_q, error_result, drop_old_on_full)
+        print(f"[CAMERA ERROR] {camera_id} failed to open source: {e}")
+        stop_evt.set()
+        return
 
     use_pacing = fps is not None and fps > 0    # pacing: if fps <= 0 => run as fast as possible (no sleep pacing)
     period = (1.0 / fps) if use_pacing else 0.0
@@ -171,11 +232,27 @@ def inference_loop(
             # ----------------------------------------------------------------------
 
             ok, frame = cap.read()
+            # if not ok:
+            #     break
+
+            # roi_presence = {name: False for name in ROIS}   # start every ROI as False
+            # full_frame_count, roi_presence, confidence_avg, r0 = process_frame(frame, model, roi_presence, conf, imgsz)
             if not ok:
+                error_result = build_camera_status_result(camera_id, 0, "CAM_READ_FAIL")
+                publish_status_result(publish_q, error_result, drop_old_on_full)
+                print(f"[CAMERA ERROR] {camera_id} frame read failed.")
+                stop_evt.set()
                 break
 
-            roi_presence = {name: False for name in ROIS}   # start every ROI as False
-            full_frame_count, roi_presence, confidence_avg, r0 = process_frame(frame, model, roi_presence, conf, imgsz)
+            try:
+                roi_presence = {name: False for name in ROIS}
+                full_frame_count, roi_presence, confidence_avg, r0 = process_frame(frame, model, roi_presence, conf, imgsz)
+            except Exception as e:
+                error_result = build_camera_status_result(camera_id, 0, f"INFERENCE_FAIL:{e}")
+                publish_status_result(publish_q, error_result, drop_old_on_full)
+                print(f"[CAMERA ERROR] {camera_id} inference failed: {e}")
+                stop_evt.set()
+                break
             # seated / standing split
             seated_count = sum(roi_presence.values())
             standing_count = max(0, full_frame_count - seated_count)
@@ -191,7 +268,9 @@ def inference_loop(
             # package metadata for MQTT thread
             result = InferenceResult(
                 ts_ms=int(time.time() * 1000),
-                #person_count=cabin_people,
+                camera_id=camera_id,
+                cam_ok=1,
+                cam_status="OK",
                 total_count=full_frame_count,
                 seated_count=seated_count,
                 standing_count=standing_count,

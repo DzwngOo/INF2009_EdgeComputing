@@ -21,6 +21,7 @@ def main():
     source = config.SOURCE
     imgsz = config.IMGSZ
     conf = config.CONF
+    camera_id = getattr(config, "CAMERA_ID", "cam1")   # ADDED
 
     t_infer = threading.Thread(
         target=inference_loop,
@@ -33,7 +34,8 @@ def main():
         "source": source,
         "imgsz": imgsz,
         "conf": conf,
-        "debug_show": True # disable it on actual demo
+        "debug_show": True, # disable it on actual demo
+        "camera_id": camera_id,  
     },
         daemon=True,
     )

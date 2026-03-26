@@ -49,45 +49,63 @@ class StationReceiver:
     def process_lora_packet(self, raw_data):
         """
         Parses incoming LoRa data.
-        Expected format: "ID:T01|S:1"
+
+        Full packet example:
+        ID:T01|S:1|CAP:40|CONF:0.812|OCC:0.325|CAB:MEDIUM|SEAT1_CAM:1|SEAT1_FINAL:TAKEN|MSGID:abcd1234
+
+        Fallback packet example:
+        ID:T01|S:1|MSGID:abcd1234
         """
-        # Trim potential whitespace
         raw_data = raw_data.strip()
-        
+
         if not self.active_train:
-            # Uncomment to debug ignored packets
-            # print(f"[IGNORE] Received '{raw_data}' but no train is at platform.")
             return
 
         try:
             fields = {}
             for part in raw_data.split('|'):
-                key, value = part.split(':', 1)
-                fields[key] = value
-            
+                if ':' in part:
+                    key, value = part.split(':', 1)
+                    fields[key] = value
+
+            # Required fields
             received_id = fields['ID']
             received_status = int(fields['S'])
-            capacity = int(fields['CAP'])
-            confidence_avg = float(fields['CONF'])
-            occupancy_ratio = float(fields['OCC'])
-            cabin_status = fields['CAB']
-            seat1_cam = int(fields['SEAT1_CAM'])
-            seat1_final = fields['SEAT1_FINAL']
+
+            # Optional fields
+            capacity = int(fields['CAP']) if 'CAP' in fields else None
+            confidence_avg = float(fields['CONF']) if 'CONF' in fields else None
+            occupancy_ratio = float(fields['OCC']) if 'OCC' in fields else None
+            cabin_status = fields.get('CAB')
+            seat1_cam = int(fields['SEAT1_CAM']) if 'SEAT1_CAM' in fields else None
+            seat1_final = fields.get('SEAT1_FINAL')
+            msg_id = fields.get('MSGID')  # optional, safe to ignore if unused
 
             ultrasonic_text = "TAKEN" if received_status == 1 else "EMPTY"
-            seat1_cam_text = "TAKEN" if seat1_cam == 1 else "EMPTY"
+            seat1_cam_text = (
+                "TAKEN" if seat1_cam == 1 else
+                "EMPTY" if seat1_cam == 0 else
+                "UNKNOWN"
+            )
 
             print(f"\n[PARSED DATA]")
             print(f"   L Train ID: {received_id}")
-            print(f"   L Ultrasonic Status: {'TAKEN' if received_status == 1 else 'EMPTY'}")
-            print(f"   L Capacity: {capacity}")
-            print(f"   L Confidence Average: {confidence_avg:.3f}")
-            print(f"   L Occupancy Ratio: {occupancy_ratio:.3f}")
-            print(f"   L Cabin Status: {cabin_status}")
-            print(f"   L Camera Seat 1: {'TAKEN' if seat1_cam == 1 else 'EMPTY'}")
-            print(f"   L Final Seat 1: {seat1_final}")
+            print(f"   L Ultrasonic Status: {ultrasonic_text}")
+            if capacity is not None:
+                print(f"   L Capacity: {capacity}")
+            if confidence_avg is not None:
+                print(f"   L Confidence Average: {confidence_avg:.3f}")
+            if occupancy_ratio is not None:
+                print(f"   L Occupancy Ratio: {occupancy_ratio:.3f}")
+            if cabin_status is not None:
+                print(f"   L Cabin Status: {cabin_status}")
+            if seat1_cam is not None:
+                print(f"   L Camera Seat 1: {seat1_cam_text}")
+            if seat1_final is not None:
+                print(f"   L Final Seat 1: {seat1_final}")
+            if msg_id is not None:
+                print(f"   L Message ID: {msg_id}")
 
-            # Update dashboard only if packet matches active train
             if received_id == self.active_train:
                 self.dashboard_state.update(
                     active_train=received_id,
@@ -101,13 +119,12 @@ class StationReceiver:
                 )
             else:
                 print(f"[IGNORE] Packet train ID {received_id} does not match active train {self.active_train}")
-                
-        except (IndexError, ValueError):
-            # Ignore heartbeat/debug messages that are not valid data
+
+        except (IndexError, ValueError, KeyError):
             if "Heartbeat" in raw_data or "Ping" in raw_data or "CRC" in raw_data:
-                 pass # Silently ignore these known debug packets
+                pass
             else:
-                 print(f"[ERROR] Malformed packet received: {raw_data}")
+                print(f"[ERROR] Malformed packet received: {raw_data}")
 
 def serial_listener(station, port_name):
     """Background thread to listen to real LoRa hardware"""
