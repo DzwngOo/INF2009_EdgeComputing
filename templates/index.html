@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edge Computing Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <div class="dashboard-container">
+        
+        <div class="card screen-card">
+            <h2 class="screen-text">SCREEN</h2>
+        </div>
+
+        <div class="card">
+            <div class="seat-title">Seat Availability</div>
+            <div class="seat-grid">
+                
+                <div class="seat-row">
+                    <div class="seat-group">
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                    </div>
+                    <div class="seat-group">
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                        <div class="seat R"></div>
+                        <div class="seat R"></div>
+                        <div class="seat G"></div>
+                    </div>
+                    <div class="seat-group">
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                    </div>
+                </div>
+
+                <div class="seat-row">
+                    <div class="seat-group">
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                    </div>
+                    <div class="seat-group">
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                        <div class="seat R"></div>
+                        <div class="seat G"></div>
+                    </div>
+                    <div class="seat-group">
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="density-title">Density</div>
+            <div class="density-main">DENSE</div>
+            
+            <div class="density-legend">
+                <div class="legend-item">SPARSE</div>
+                <div class="legend-item active-dense">DENSE</div>
+                <div class="legend-item">CONGESTED</div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>
