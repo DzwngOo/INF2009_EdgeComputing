@@ -414,24 +414,33 @@ def main(train_id="T01"):
             # - whether primary camera failed
             # - which mode is active
             # - when no camera => crowd density fields remain unavailable
+            # msg = (
+            #     f"ID:{train_id}"
+            #     f"|S:{seat_status}"
+            #     f"|SONAR_OK:{sonar_ok}"
+            #     f"|SONAR_STATUS:{sonar_status}"
+            #     f"|CAM_ID:{cam_id}"
+            #     f"|CAM_OK:{cam_ok}"
+            #     f"|CAM_STATUS:{cam_status}"
+            #     f"|MODE:{mode}"
+            #     f"|CAP:{capacity}"
+            #     f"|CONF:{fmt_float(confidence_avg)}"
+            #     f"|OCC:{fmt_float(occupancy_ratio)}"
+            #     f"|CAB:{cabin_status}"
+            #     f"|SEAT1_CAM:{seat1_cam}"
+            #     f"|SEAT1_FINAL:{final_seat1_status}"
+            #     f"|MSGID:{msg_id}"
+            # )
             msg = (
                 f"ID:{train_id}"
                 f"|S:{seat_status}"
-                f"|SONAR_OK:{sonar_ok}"
-                f"|SONAR_STATUS:{sonar_status}"
-                f"|CAM_ID:{cam_id}"
-                f"|CAM_OK:{cam_ok}"
-                f"|CAM_STATUS:{cam_status}"
-                f"|MODE:{mode}"
                 f"|CAP:{capacity}"
                 f"|CONF:{fmt_float(confidence_avg)}"
                 f"|OCC:{fmt_float(occupancy_ratio)}"
                 f"|CAB:{cabin_status}"
                 f"|SEAT1_CAM:{seat1_cam}"
                 f"|SEAT1_FINAL:{final_seat1_status}"
-                f"|MSGID:{msg_id}"
             )
-
             print(f"\n[{TX_INTERVAL_SECONDS}s Cycle] Transmitting to Station: {msg}")
             print(f"   L Final Mode: {mode}")
             print(f"   L Final Seat 1 Status: {final_seat1_status}")
