@@ -1,0 +1,144 @@
+/* Import a clean, modern font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+
+body {
+    background-color: #f0f4f8; /* Softer, cooler gray background */
+    color: #334155;
+    font-family: 'Inter', sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 50px 20px;
+    margin: 0;
+}
+
+.dashboard-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+    width: 100%;
+    max-width: 650px;
+}
+
+.card {
+    background-color: #ffffff;
+    /* Removed box-shadow, added subtle border for flat definition */
+    border: 1px solid #e2e8f0; 
+    border-radius: 16px; 
+    padding: 30px;
+    text-align: center;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* --- Screen Indicator --- */
+.screen-card {
+    padding: 20px;
+    /* Keep background white as requested */
+    background-color: #ffffff; 
+    /* Inherits border from general .card, removed gradient and shadow */
+}
+
+.screen-text {
+    /* Changed text to dark for readability on white background */
+    color: #1e293b; 
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 8px; 
+    margin: 0;
+    text-transform: uppercase;
+}
+
+/* --- Seat Area --- */
+.seat-title {
+    font-size: 16px;
+    color: #64748b;
+    margin-bottom: 24px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+}
+
+.seat-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    align-items: center;
+}
+
+.seat-row {
+    display: flex;
+    gap: 48px; 
+}
+
+.seat-group {
+    display: flex;
+    gap: 12px;
+}
+
+.seat {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px; 
+    transition: all 0.3s ease;
+    /* Inherits card border for consistent flat look */
+    border: 1px solid rgba(0,0,0,0.05); 
+}
+
+/* Kept gradients but removed all inner and outer shadows */
+.seat.G { 
+    background: linear-gradient(145deg, #22c55e, #16a34a);
+}
+
+.seat.R { 
+    background: linear-gradient(145deg, #ef4444, #dc2626);
+}
+
+/* --- Density Area --- */
+.density-title {
+    font-size: 16px;
+    color: #64748b;
+    margin-bottom: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+}
+
+.density-main {
+    font-size: 64px;
+    font-weight: 800;
+    color: #f97316; 
+    margin: 5px 0 25px 0;
+    letter-spacing: -1.5px;
+    /* Removed text-shadow glow */
+}
+
+/* Horizontal pill-style legend */
+.density-legend {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+}
+
+.legend-item {
+    font-size: 13px;
+    font-weight: 700;
+    padding: 8px 18px;
+    border-radius: 20px;
+    color: #94a3b8; 
+    background-color: #f1f5f9; 
+    letter-spacing: 0.5px;
+}
+
+/* Active states for the legend */
+.legend-item.active-sparse { background-color: #dcfce7; color: #16a34a; }
+.legend-item.active-dense { background-color: #ffedd5; color: #ea580c; }
+.legend-item.active-congested { background-color: #fee2e2; color: #dc2626; }
+
+.seat.O {
+    background: linear-gradient(145deg, #f59e0b, #d97706);
+}
+
+.seat.X {
+    background: linear-gradient(145deg, #cbd5e1, #94a3b8);
+}

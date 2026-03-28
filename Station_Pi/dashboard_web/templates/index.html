@@ -1,135 +1,161 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Station Pi Dashboard</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background: #f4f6f8;
-        }
-        h1 {
-            margin-bottom: 10px;
-        }
-        .status-bar {
-            padding: 12px 16px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            font-weight: bold;
-            background: #dfe6ee;
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 16px;
-        }
-        .card {
-            background: white;
-            border-radius: 14px;
-            padding: 16px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        }
-        .label {
-            font-size: 13px;
-            color: #666;
-            margin-bottom: 6px;
-        }
-        .value {
-            font-size: 24px;
-            font-weight: bold;
-        }
-        .small {
-            font-size: 16px;
-        }
-        .taken {
-            color: #c62828;
-        }
-        .empty {
-            color: #2e7d32;
-        }
-        .unknown {
-            color: #ef6c00;
-        }
-        .footer {
-            margin-top: 20px;
-            color: #666;
-            font-size: 13px;
-        }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edge Computing Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h1>Station Pi Dashboard</h1>
-    <div class="status-bar">
-        Platform State:
-        {% if data.active_train %}
-            LINKED TO {{ data.active_train }}
-        {% else %}
-            IDLE / NO TRAIN AT PLATFORM
-        {% endif %}
-    </div>
 
-    <div class="grid">
-        <div class="card">
-            <div class="label">Active Train</div>
-            <div class="value small">{{ data.active_train if data.active_train else "None" }}</div>
+    <div class="dashboard-container">
+        
+        <div class="card screen-card">
+            <h2 class="screen-text">SCREEN</h2>
         </div>
 
         <div class="card">
-            <div class="label">Ultrasonic Seat Status</div>
-            <div class="value 
-                {% if data.ultrasonic_status == 'TAKEN' %}taken
-                {% elif data.ultrasonic_status == 'EMPTY' %}empty
-                {% else %}unknown{% endif %}">
-                {{ data.ultrasonic_status }}
+            <div class="seat-title">Seat Availability</div>
+            <div class="seat-grid">
+                
+                <div class="seat-row">
+                    <div class="seat-group">
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                    </div>
+
+                    <div class="seat-group">
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+
+                        <!-- controlled seat -->
+                        <div id="seat1" class="seat 
+                            {% if data.seat1_final == 'TAKEN' %}
+                                R
+                            {% elif data.seat1_final == 'EMPTY' %}
+                                G
+                            {% elif data.seat1_final == 'OBJECT' %}
+                                O
+                            {% else %}
+                                X
+                            {% endif %}
+                        "></div>
+
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                    </div>
+
+                    <div class="seat-group">
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                    </div>
+                </div>
+
+                <div class="seat-row">
+                    <div class="seat-group">
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                    </div>
+                    <div class="seat-group">
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                    </div>
+                    <div class="seat-group">
+                        <div class="seat G"></div>
+                        <div class="seat G"></div>
+                    </div>
+                </div>
+
             </div>
         </div>
 
         <div class="card">
-            <div class="label">Capacity</div>
-            <div class="value">{{ data.capacity if data.capacity is not none else "--" }}</div>
-        </div>
-
-        <div class="card">
-            <div class="label">Confidence Average</div>
-            <div class="value">{{ "%.3f"|format(data.confidence_avg) if data.confidence_avg is not none else "--" }}</div>
-        </div>
-
-        <div class="card">
-            <div class="label">Occupancy Ratio</div>
-            <div class="value">{{ "%.3f"|format(data.occupancy_ratio) if data.occupancy_ratio is not none else "--" }}</div>
-        </div>
-
-        <div class="card">
-            <div class="label">Cabin Status</div>
-            <div class="value small">{{ data.cabin_status if data.cabin_status else "--" }}</div>
-        </div>
-
-        <div class="card">
-            <div class="label">Camera Seat 1</div>
-            <div class="value 
-                {% if data.seat1_cam == 'TAKEN' %}taken
-                {% elif data.seat1_cam == 'EMPTY' %}empty
-                {% else %}unknown{% endif %}">
-                {{ data.seat1_cam }}
+            <div class="density-title">Density</div>
+            <div id="density-main" class="density-main">UNKNOWN</div>
+            
+            <div class="density-legend">
+                <div id="legend-sparse" class="legend-item">SPARSE</div>
+                <div id="legend-dense" class="legend-item">DENSE</div>
+                <div id="legend-congested" class="legend-item">CONGESTED</div>
             </div>
         </div>
 
-        <div class="card">
-            <div class="label">Final Seat 1</div>
-            <div class="value small">{{ data.seat1_final if data.seat1_final is not none else "--" }}</div>
-        </div>
-    </div>
-
-    <div class="footer">
-        Auto-refresh every 2 seconds
     </div>
 
     <script>
-        setTimeout(() => {
-            location.reload();
-        }, 2000);
+        function getDensityLabel(occupancyRatio) {
+            if (occupancyRatio === null || occupancyRatio === undefined || occupancyRatio < 0) {
+                return "UNKNOWN";
+            }
+
+            if (occupancyRatio < 0.25) {
+                return "SPARSE";
+            } else if (occupancyRatio < 0.6) {
+                return "DENSE";
+            } else {
+                return "CONGESTED";
+            }
+        }
+
+        function updateDensityUI(occupancyRatio) {
+            const densityMain = document.getElementById("density-main");
+            const sparse = document.getElementById("legend-sparse");
+            const dense = document.getElementById("legend-dense");
+            const congested = document.getElementById("legend-congested");
+
+            sparse.classList.remove("active-sparse");
+            dense.classList.remove("active-dense");
+            congested.classList.remove("active-congested");
+
+            const label = getDensityLabel(occupancyRatio);
+            densityMain.textContent = label;
+
+            if (label === "SPARSE") {
+                sparse.classList.add("active-sparse");
+            } else if (label === "DENSE") {
+                dense.classList.add("active-dense");
+            } else if (label === "CONGESTED") {
+                congested.classList.add("active-congested");
+            }
+        }
+
+        function updateSeatUI(seat1Final) {
+            const seat = document.getElementById("seat1");
+            seat.classList.remove("G", "R", "O", "X");
+
+            if (seat1Final === "TAKEN") {
+                seat.classList.add("R");
+            } else if (seat1Final === "EMPTY") {
+                seat.classList.add("G");
+            } else if (seat1Final === "OBJECT") {
+                seat.classList.add("O");
+            } else {
+                seat.classList.add("X");
+            }
+        }
+
+        async function refreshDashboard() {
+            try {
+                const response = await fetch("/api/data");
+                const data = await response.json();
+
+                updateDensityUI(data.occupancy_ratio);
+                updateSeatUI(data.seat1_final);
+            } catch (err) {
+                console.error("Failed to refresh dashboard:", err);
+            }
+        }
+
+        // Initial render from Flask-provided data
+        updateDensityUI({{ data.occupancy_ratio if data.occupancy_ratio is not none else -1 }});
+        updateSeatUI("{{ data.seat1_final if data.seat1_final is not none else 'UNKNOWN' }}");
+
+        // Poll every 2 seconds
+        setInterval(refreshDashboard, 2000);
     </script>
+
 </body>
 </html>
