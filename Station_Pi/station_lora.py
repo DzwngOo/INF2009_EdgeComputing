@@ -53,6 +53,7 @@ class StationReceiver:
         """
         # Trim potential whitespace
         raw_data = raw_data.strip()
+        print(raw_data)
         
         if not self.active_train:
             # Uncomment to debug ignored packets
@@ -118,6 +119,7 @@ def serial_listener(station, port_name):
             if ser.in_waiting:
                 try:
                     line = ser.readline().decode('utf-8', errors='ignore').strip()
+                    print(f"[RAW] {repr(line)}")
                     # The firmware might output: "[RX] Data: ID:T01|S:1 | RSSI: ..."
                     if "[RX] Data: " in line:
                         # Extract just the payload part

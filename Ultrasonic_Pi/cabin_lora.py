@@ -40,6 +40,7 @@ def main(train_id="T01"):
         mqtt_thread = MqttSubscriberThread(mqtt_queue)
         mqtt_thread.start()
         
+        # ==== Deric's ====
         while True:
             # --- YOUR MAIN LOGIC ---
             
@@ -56,30 +57,19 @@ def main(train_id="T01"):
             print("=" * 10)
             
             status_desc = "TAKEN" if seat_status == 1 else "EMPTY"
-            if not mqtt_queue.empty():
-                message_data = mqtt_queue.get()  # Retrieve the message from the queue
+            message_data = None
+            while not mqtt_queue.empty():
+                message_data = mqtt_queue.get()
+
+            if message_data is not None:
                 print(f"   L Capacity: {message_data['capacity']}")
                 print(f"   L Confidence Average: {message_data['confidence_avg']}")
                 print(f"   L Occupancy Ratio: {message_data['occupancy_ratio']}")
                 print(f"   L Cabin Status: {message_data['cabin_status']}")
 
-                # Camera seat info
                 seat1_status = message_data['roi_presence']['seat1']
-                # seat2_status = message_data['roi_presence']['seat2']  # If second ultrasonic applied
-                print(f"   L Seat 1: {seat1_status}")
-                # print(f"   L Seat 2: {seat2_status}") 
+                final_seat1_status = "EMPTY" if seat_status == 0 else ("TAKEN" if seat1_status else "OBJECT")
 
-                # Aggregated logic
-                if seat_status == 0:
-                    final_seat1_status = "EMPTY"
-                else:
-                    if seat1_status:
-                        final_seat1_status = "TAKEN"
-                    else:
-                        final_seat1_status = "OBJECT"
-                print(f"   L Final Seat 1 Status: {final_seat1_status}")
-
-                # Extended packet
                 msg = (
                     f"ID:{train_id}"
                     f"|S:{seat_status}"
@@ -96,21 +86,37 @@ def main(train_id="T01"):
                 print(f"   L Interpretation: {status_desc} (<20cm is TAKEN)")
                 print(f"   L Final Seat 1 Status: {final_seat1_status}")
 
-                print("=" * 10)
-                
             else:
-                # fallback packet if no MQTT/camera data yet
                 msg = f"ID:{train_id}|S:{seat_status}"
                 print(f"\n[20s Cycle] Transmitting to Station: {msg}")
                 print(f"   L Raw Distance: {distance:.2f}cm")
                 print(f"   L Interpretation: {status_desc} (<20cm is TAKEN)")
+        # ==== Deric's ====
 
-                print("=" * 10)
-
+        # ==== XK's ====
+        # while True:
+        #     # --- YOUR MAIN LOGIC ---
+            
+        #     # 1. Pull latest data from sonar (Instant)
+        #     # You can pull this anytime. The sensor updates itself ~5 times/sec in the background.
+        #     seat_status = sensor.get_latest_status()
+        #     distance = sensor.get_latest_distance()
+            
+        #     # 2. Simulate LoRa Transmission
+        #     # Packet Format: "ID:T01|S:1"
+        #     # The '|' acts as a delimiter so the receiver can split the string easily
+        #     msg = f"ID:{train_id}|S:{seat_status}"
+            
+        #     status_desc = "TAKEN" if seat_status == 1 else "EMPTY"
+        #     print(f"\n[20s Cycle] Transmitting to Station: {msg}")
+        #     print(f"   L Raw Distance: {distance:.2f}cm")
+        #     print(f"   L Interpretation: {status_desc} (<20cm is TAKEN)")
+        # ==== XK's ====
             
             # Send to LoRa module if connected
             if lora_serial:
                 try:
+                    print(msg)
                     lora_serial.write((msg + '\n').encode('utf-8'))
                     # Optional: Read response/debug from LoRa module
                     # if lora_serial.in_waiting:
