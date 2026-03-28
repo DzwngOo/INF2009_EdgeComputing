@@ -1,9 +1,24 @@
-import time, serial, queue
+import time, serial, queue, uuid
 from ultrasonic import SonarSensor
 from mqtt import MqttSubscriberThread
+import lora_helper, sqlite_helper, camera_helper
 
 # This file represents your "Main Application Logic"
 # It runs on the main thread and imports the sensor driver
+
+# ADDED: camera/broker health handling
+PRIMARY_CAMERA_ID = "cam1"   # CHANGE THIS if your main camera ID is different
+TX_INTERVAL_SECONDS = 20
+
+def fmt_float(value):
+    if value is None:
+        return "-1"
+    try:
+        if float(value) < 0:
+            return "-1"
+        return f"{float(value):.3f}"
+    except Exception:
+        return "-1"
 
 def main(train_id="T01"):
     # This file represents your "Main Application Logic"
@@ -12,86 +27,150 @@ def main(train_id="T01"):
     sensor = SonarSensor()
     
     # Initialize Serial connection to LoRa module (PlatformIO device)
-    lora_serial = None
-    try:
-        # Common ports for Arduino/PlatformIO devices on Raspbian
-        port_candidates = ['/dev/ttyACM0', '/dev/ttyUSB0', '/dev/ttyACM1', '/dev/ttyUSB1']
-        for port in port_candidates:
-            try:
-                lora_serial = serial.Serial(port, 115200, timeout=1)
-                print(f"[SYSTEM] Connected to LoRa module on {port}")
-                break
-            except serial.SerialException:
-                pass
-        
-        if not lora_serial:
-            print("[WARNING] No LoRa module found on standard ports. Running in Simulation Mode.")
-    except Exception as e:
-        print(f"[ERROR] Serial setup failed: {e}")
+    lora_serial = lora_helper.connect_lora()
 
     # Create a Queue to hold the data from MQTT
     mqtt_queue = queue.Queue()
 
+    # Keep latest state for each camera Pi
+    camera_states = {}
+
+    # initialize SQLite cache
+    sqlite_helper.init_db()
+
     try:
         sensor.start()
         print(f"Main System Started for {train_id}. Sensor runs in background.")
+        print(f"[SYSTEM] SQLite cache ready. Pending messages: {sqlite_helper.count_pending_messages()}")
 
         # Start MQTT Subscriber in a separate thread
         mqtt_thread = MqttSubscriberThread(mqtt_queue)
         mqtt_thread.start()
         
-        # ==== Deric's ====
+        # ==== Dennis's ====
         while True:
-            # --- YOUR MAIN LOGIC ---
+            # try reconnecting if LoRa is currently unavailable
+            if (not lora_serial) or (hasattr(lora_serial, "is_open") and not lora_serial.is_open):
+                lora_serial = lora_helper.connect_lora()
+
+            # if LoRa link is back, resend cached messages first
+            if lora_serial:
+                retry_ok = lora_helper.flush_cached_messages(lora_serial)
+                if not retry_ok:
+                    try:
+                        lora_serial.close()
+                    except Exception:
+                        pass
+                    lora_serial = None
+
+            # Update per-camera states from MQTT
+            camera_helper.drain_camera_queue(mqtt_queue, camera_states)
+
+            # --- sensor health snapshot ---
+            sonar_ok = 1 if sensor.is_healthy() else 0
+            sonar_status = sensor.get_health_status()
             
-            # 1. Pull latest data from sonar (Instant)
-            # You can pull this anytime. The sensor updates itself ~5 times/sec in the background.
-            seat_status = sensor.get_latest_status()    # 1 = TAKEN, 0 = EMPTY
+            # If sonar is unhealthy, do not trust its seat result
+            seat_status = sensor.get_latest_status() if sonar_ok else -1
             distance = sensor.get_latest_distance()
             
-            # 2. Simulate LoRa Transmission
-            # Packet Format: "ID:T01|S:1"
-            # The '|' acts as a delimiter so the receiver can split the string easily
-            msg = f"ID:{train_id}|S:{seat_status}"
+            # --- camera health snapshot ---
+            cam_state = camera_helper.get_effective_camera_state(camera_states, PRIMARY_CAMERA_ID, camera_helper.CAMERA_STALE_SECONDS)
+            cam_ok = cam_state["cam_ok"]
+            cam_status = cam_state["cam_status"]
+            cam_data = cam_state["data"]
+            cam_id = PRIMARY_CAMERA_ID
+
+            # create unique ID for SQLite cache tracking
+            msg_id = str(uuid.uuid4())[:8]
 
             print("=" * 10)
-            
-            status_desc = "TAKEN" if seat_status == 1 else "EMPTY"
-            message_data = None
-            while not mqtt_queue.empty():
-                message_data = mqtt_queue.get()
+            print(f"[CAMERA STATES] {camera_helper.summarize_camera_states(camera_states)}")
+            print(f"[SONAR] ok={sonar_ok} status={sonar_status} distance={distance:.2f}cm" if distance >= 0 else f"[SONAR] ok={sonar_ok} status={sonar_status} distance=INVALID")
+            print(f"[PRIMARY CAMERA] id={cam_id} ok={cam_ok} status={cam_status}")
 
-            if message_data is not None:
-                print(f"   L Capacity: {message_data['capacity']}")
-                print(f"   L Confidence Average: {message_data['confidence_avg']}")
-                print(f"   L Occupancy Ratio: {message_data['occupancy_ratio']}")
-                print(f"   L Cabin Status: {message_data['cabin_status']}")
+            # =========================
+            # Explicit degraded-mode logic:
+            # - FUSED      : sonar ok + camera ok
+            # - SONAR_ONLY : sonar ok + camera fail
+            # - CAM_ONLY   : sonar fail + camera ok
+            # - NO_SENSOR  : both fail
+            # =========================
 
-                seat1_status = message_data['roi_presence']['seat1']
-                final_seat1_status = "EMPTY" if seat_status == 0 else ("TAKEN" if seat1_status else "OBJECT")
+            capacity = -1
+            confidence_avg = -1
+            occupancy_ratio = -1
+            cabin_status = "UNKNOWN"
+            seat1_cam = -1
+            final_seat1_status = "UNKNOWN"
+            mode = "NO_SENSOR"
 
-                msg = (
-                    f"ID:{train_id}"
-                    f"|S:{seat_status}"
-                    f"|CAP:{message_data['capacity']}"
-                    f"|CONF:{message_data['confidence_avg']:.3f}"
-                    f"|OCC:{message_data['occupancy_ratio']:.3f}"
-                    f"|CAB:{message_data['cabin_status']}"
-                    f"|SEAT1_CAM:{int(seat1_status)}"
-                    f"|SEAT1_FINAL:{final_seat1_status}"
-                )
+            if sonar_ok == 1 and cam_ok == 1:
+                # FUSED MODE
+                seat1_status = bool(cam_data["roi_presence"]["seat1"])
+                seat1_cam = 1 if seat1_status else 0
 
-                print(f"\n[20s Cycle] Transmitting to Station: {msg}")
-                print(f"   L Raw Distance: {distance:.2f}cm")
-                print(f"   L Interpretation: {status_desc} (<20cm is TAKEN)")
-                print(f"   L Final Seat 1 Status: {final_seat1_status}")
+                capacity = cam_data.get("capacity", -1)
+                confidence_avg = cam_data.get("confidence_avg", -1)
+                occupancy_ratio = cam_data.get("occupancy_ratio", -1)
+                cabin_status = cam_data.get("cabin_status", "UNKNOWN")
+
+                if seat_status == 0:
+                    final_seat1_status = "EMPTY"
+                else:
+                    if seat1_status:
+                        final_seat1_status = "TAKEN"
+                    else:
+                        final_seat1_status = "OBJECT"
+
+                mode = "FUSED"
+
+            elif sonar_ok == 1 and cam_ok == 0:
+                # SONAR ONLY MODE
+                # camera failed => still use sonar seat result
+                # crowd density unavailable because camera failed
+                final_seat1_status = "TAKEN" if seat_status == 1 else "EMPTY"
+                mode = "SONAR_ONLY"
+
+            elif sonar_ok == 0 and cam_ok == 1:
+                # CAM ONLY MODE
+                # ultrasonic failed => fallback to camera ROI seat result
+                seat1_status = bool(cam_data["roi_presence"]["seat1"])
+                seat1_cam = 1 if seat1_status else 0
+
+                capacity = cam_data.get("capacity", -1)
+                confidence_avg = cam_data.get("confidence_avg", -1)
+                occupancy_ratio = cam_data.get("occupancy_ratio", -1)
+                cabin_status = cam_data.get("cabin_status", "UNKNOWN")
+
+                final_seat1_status = "TAKEN" if seat1_status else "EMPTY"
+                mode = "CAM_ONLY"
 
             else:
-                msg = f"ID:{train_id}|S:{seat_status}"
-                print(f"\n[20s Cycle] Transmitting to Station: {msg}")
-                print(f"   L Raw Distance: {distance:.2f}cm")
-                print(f"   L Interpretation: {status_desc} (<20cm is TAKEN)")
-        # ==== Deric's ====
+                # NO SENSOR MODE
+                final_seat1_status = "UNKNOWN"
+                mode = "NO_SENSOR"
+
+            msg = (
+                f"ID:{train_id}"
+                f"|S:{seat_status}"
+                f"|CAP:{capacity}"
+                f"|CONF:{fmt_float(confidence_avg)}"
+                f"|OCC:{fmt_float(occupancy_ratio)}"
+                f"|CAB:{cabin_status}"
+                f"|SEAT1_CAM:{seat1_cam}"
+                f"|SEAT1_FINAL:{final_seat1_status}"
+            )
+            print(f"\n[{TX_INTERVAL_SECONDS}s Cycle] Transmitting to Station: {msg}")
+            print(f"   L Final Mode: {mode}")
+            print(f"   L Final Seat 1 Status: {final_seat1_status}")
+            print("=" * 10)
+
+            # cache first in SQLite
+            sqlite_helper.cache_message(msg_id, msg)
+            print(f"   [CACHE] Stored message {msg_id} in SQLite. Pending now: {sqlite_helper.count_pending_messages()}")
+        # ==== Dennis's ====
+            
 
         # ==== XK's ====
         # while True:
@@ -113,28 +192,34 @@ def main(train_id="T01"):
         #     print(f"   L Interpretation: {status_desc} (<20cm is TAKEN)")
         # ==== XK's ====
             
-            # Send to LoRa module if connected
             if lora_serial:
-                try:
-                    print(msg)
-                    lora_serial.write((msg + '\n').encode('utf-8'))
-                    # Optional: Read response/debug from LoRa module
-                    # if lora_serial.in_waiting:
-                    #     print(f"   [LORA DEBUG] {lora_serial.readline().decode().strip()}")
-                except Exception as e:
-                    print(f"   [ERROR] LoRa Write Failed: {e}")
+                ok = lora_helper.try_send_lora(lora_serial, msg)
+                if ok:
+                    sqlite_helper.delete_cached_message(msg_id)
+                    print(f"   [SEND OK] Message {msg_id} sent and removed from SQLite cache.")
+                    # print(f"   [SEND OK] ok")
+                else:
+                    print(f"   [SEND FAIL] Message {msg_id} kept in SQLite cache for retry.")
+                    # print(f"   [SEND OK] fail")
+                    try:
+                        lora_serial.close()
+                    except Exception:
+                        pass
+                    lora_serial = None
+            else:
+                print(f"   [CACHE ONLY] No LoRa connection. Message {msg_id} kept in SQLite cache.")
 
-            # 3. Wait for next cycle
-            # This sleep doesn't block the sensor! It keeps measuring in its own thread.
-            time.sleep(20) 
+            time.sleep(TX_INTERVAL_SECONDS)
             
     except KeyboardInterrupt:
         print("\nStopping Main System...")
     finally:
-        # Always clean up the sensor thread on exit
         sensor.stop()
         if lora_serial:
-            lora_serial.close()
+            try:
+                lora_serial.close()
+            except Exception:
+                pass
 
 if __name__ == '__main__':
     # You can change this ID for different trains (e.g. T02, T03)
