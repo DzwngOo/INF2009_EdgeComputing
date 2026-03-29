@@ -3,10 +3,22 @@ import time
 import threading
 
 class SonarSensor:
-    def __init__(self, trig_pin, echo_pin, occupied_threshold_cm=20):
+    # Shared lock prevents two ultrasonic modules from pinging at the same time.
+    _trigger_lock = threading.Lock()
+
+    def __init__(
+        self,
+        trig_pin,
+        echo_pin,
+        occupied_threshold_cm=20,
+        min_valid_cm=8.0,
+        max_valid_cm=400.0,
+    ):
         self.trig_pin = trig_pin
         self.echo_pin = echo_pin
         self.occupied_threshold_cm = occupied_threshold_cm
+        self.min_valid_cm = float(min_valid_cm)
+        self.max_valid_cm = float(max_valid_cm)
 
         self.current_status = 0   # 0: Vacant, 1: Occupied
         self.current_distance = 0.0
@@ -27,23 +39,27 @@ class SonarSensor:
         gpio_in = GPIO.input
         timer = time.perf_counter
 
-        GPIO.output(self.trig_pin, True)
-        time.sleep(0.00001)
-        GPIO.output(self.trig_pin, False)
+        with SonarSensor._trigger_lock:
+            GPIO.output(self.trig_pin, False)
+            time.sleep(0.0002)
 
-        pulse_start = timer()
-        pulse_end = timer()
-        timeout = timer() + 0.04
+            GPIO.output(self.trig_pin, True)
+            time.sleep(0.00001)
+            GPIO.output(self.trig_pin, False)
 
-        while gpio_in(self.echo_pin) == 0:
             pulse_start = timer()
-            if pulse_start > timeout:
-                return -1
-
-        while gpio_in(self.echo_pin) == 1:
             pulse_end = timer()
-            if pulse_end > timeout:
-                return -1
+            timeout = timer() + 0.04
+
+            while gpio_in(self.echo_pin) == 0:
+                pulse_start = timer()
+                if pulse_start > timeout:
+                    return -1
+
+            while gpio_in(self.echo_pin) == 1:
+                pulse_end = timer()
+                if pulse_end > timeout:
+                    return -1
 
         duration = pulse_end - pulse_start
         return duration * 17150
@@ -52,7 +68,7 @@ class SonarSensor:
         readings = []
         for _ in range(5):
             d = self._read_raw_distance()
-            if 2 < d < 400:
+            if self.min_valid_cm < d < self.max_valid_cm:
                 readings.append(d)
             time.sleep(0.01)
 
@@ -70,6 +86,9 @@ class SonarSensor:
                     new_status = 1 if dist < self.occupied_threshold_cm else 0
                     self.current_status = new_status
                     self.current_distance = dist
+                else:
+                    # Mark invalid cycle so stale near-values do not appear as live readings.
+                    self.current_distance = -1.0
 
                 time.sleep(0.2)
             except Exception as e:
