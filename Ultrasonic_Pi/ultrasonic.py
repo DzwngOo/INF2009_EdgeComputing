@@ -11,19 +11,29 @@ class SonarSensor:
         trig_pin,
         echo_pin,
         occupied_threshold_cm=20,
-        min_valid_cm=8.0,
+        min_valid_cm=3.0,
         max_valid_cm=400.0,
+        invalid_hold_s=1.5,
+        status_change_confirmations=2,
     ):
         self.trig_pin = trig_pin
         self.echo_pin = echo_pin
         self.occupied_threshold_cm = occupied_threshold_cm
         self.min_valid_cm = float(min_valid_cm)
         self.max_valid_cm = float(max_valid_cm)
+        self.invalid_hold_s = float(invalid_hold_s)
+        self.status_change_confirmations = max(1, int(status_change_confirmations))
 
         self.current_status = 0   # 0: Vacant, 1: Occupied
-        self.current_distance = 0.0
+        self.current_distance = -1.0
+        self.distance_valid = False
         self.running = False
         self._thread = None
+
+        self._last_valid_distance = -1.0
+        self._last_valid_time = 0.0
+        self._pending_status = None
+        self._pending_status_count = 0
 
         self._setup_gpio()
 
@@ -77,18 +87,52 @@ class SonarSensor:
             return readings[len(readings) // 2]
         return -1
 
+    def _update_status_with_hysteresis(self, candidate_status):
+        if candidate_status == self.current_status:
+            self._pending_status = None
+            self._pending_status_count = 0
+            return
+
+        if candidate_status != self._pending_status:
+            self._pending_status = candidate_status
+            self._pending_status_count = 1
+        else:
+            self._pending_status_count += 1
+
+        if self._pending_status_count >= self.status_change_confirmations:
+            self.current_status = candidate_status
+            self._pending_status = None
+            self._pending_status_count = 0
+
     def _loop(self):
         while self.running:
             try:
                 dist = self._get_stable_distance()
+                now = time.perf_counter()
 
                 if dist > 0:
                     new_status = 1 if dist < self.occupied_threshold_cm else 0
-                    self.current_status = new_status
+                    self._update_status_with_hysteresis(new_status)
+
                     self.current_distance = dist
+                    self.distance_valid = True
+                    self._last_valid_distance = dist
+                    self._last_valid_time = now
                 else:
-                    # Mark invalid cycle so stale near-values do not appear as live readings.
-                    self.current_distance = -1.0
+                    hold_recent = (
+                        self._last_valid_time > 0
+                        and (now - self._last_valid_time) <= self.invalid_hold_s
+                        and self._last_valid_distance > 0
+                    )
+
+                    self.distance_valid = False
+                    if hold_recent:
+                        # Keep the last valid value briefly to avoid flicker on occasional no-echo cycles.
+                        self.current_distance = self._last_valid_distance
+                    else:
+                        self.current_distance = -1.0
+                        self._pending_status = None
+                        self._pending_status_count = 0
 
                 time.sleep(0.2)
             except Exception as e:
@@ -113,6 +157,9 @@ class SonarSensor:
 
     def get_latest_distance(self):
         return self.current_distance
+
+    def get_latest_distance_valid(self):
+        return self.distance_valid
 
     @staticmethod
     def cleanup_gpio():
