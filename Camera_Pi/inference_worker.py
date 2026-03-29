@@ -1,4 +1,4 @@
-import queue, threading, time, cv2, json
+import queue, threading, time, cv2, json, statistics
 from config import ROIS
 from dataclasses import dataclass
 from ultralytics import YOLO
@@ -32,6 +32,74 @@ class InferenceResult:
             "cabin_status": self.cabin_status,
             
         })
+
+
+# ---------- latency tracker ----------
+class _LatencyTracker:
+    """Accumulate per-stage timings and print a rolling summary every N frames."""
+
+    _STAGE_BUDGETS_MS = {
+        "capture_preprocess": 15.0,
+        "inference": 42.0,
+    }
+
+    def __init__(self, report_every: int = 100, window: int = 100):
+        self.report_every = report_every
+        self.window = window
+        self._samples: dict[str, list[float]] = {
+            "capture_preprocess": [],
+            "inference": [],
+            "end_to_end": [],
+        }
+        self._fps_frames: int = 0
+        self._fps_window_start: float = time.perf_counter()
+        self._frame_count: int = 0
+
+    def record(self, stage: str, elapsed_ms: float) -> None:
+        buf = self._samples.setdefault(stage, [])
+        buf.append(elapsed_ms)
+        if len(buf) > self.window:
+            buf.pop(0)
+
+    def tick(self) -> None:
+        """Call once per completed pipeline cycle to trigger periodic reporting."""
+        self._frame_count += 1
+        self._fps_frames += 1
+        if self._frame_count % self.report_every == 0:
+            self._report()
+
+    def _report(self) -> None:
+        now = time.perf_counter()
+        elapsed = now - self._fps_window_start
+        fps = self._fps_frames / elapsed if elapsed > 0 else 0.0
+        self._fps_frames = 0
+        self._fps_window_start = now
+
+        lines = [
+            f"[Latency @frame {self._frame_count}]  FPS={fps:.1f} (target ≥5)"
+        ]
+        for stage, samples in self._samples.items():
+            if not samples:
+                continue
+            mean_ms = statistics.mean(samples)
+            stdev_ms = statistics.stdev(samples) if len(samples) > 1 else 0.0
+            p99_ms = _percentile(samples, 99)
+            budget = self._STAGE_BUDGETS_MS.get(stage)
+            ok = ""
+            if budget is not None:
+                ok = " ✓" if mean_ms <= budget else " ✗"
+            lines.append(
+                f"  {stage:<22s}  mean={mean_ms:6.1f} ms  ±{stdev_ms:5.1f}  p99={p99_ms:6.1f} ms{ok}"
+            )
+        print("\n".join(lines))
+
+
+def _percentile(values: list[float], p: float) -> float:
+    if not values:
+        return 0.0
+    sv = sorted(values)
+    idx = max(0, min(int(round((p / 100.0) * (len(sv) - 1))), len(sv) - 1))
+    return float(sv[idx])
 
 
 # ---------- inference functions ----------
@@ -161,7 +229,8 @@ def inference_loop(
     imgsz: int = 416,
     conf: float = 0.45, #0.25 is default in YOLOv8, but can be tuned for better precision/recall balance
     drop_old_on_full: bool = True,
-    debug_show: bool = False
+    debug_show: bool = False,
+    latency_report_every: int = 100,
 ):
     # init
     model = YOLO(model_path)
@@ -170,6 +239,8 @@ def inference_loop(
     use_pacing = fps is not None and fps > 0    # pacing: if fps <= 0 => run as fast as possible (no sleep pacing)
     period = (1.0 / fps) if use_pacing else 0.0
     next_t = time.perf_counter()
+
+    tracker = _LatencyTracker(report_every=latency_report_every)
 
     try:
         while not stop_evt.is_set():
@@ -181,12 +252,25 @@ def inference_loop(
                 next_t += period
             # ----------------------------------------------------------------------
 
+            t_cycle = time.perf_counter()
+
+            # Stage 1-2: capture + preprocess (cap.read; resize happens inside model.predict via imgsz)
+            t0 = time.perf_counter()
             ok, frame = cap.read()
             if not ok:
                 break
+            tracker.record("capture_preprocess", (time.perf_counter() - t0) * 1000.0)
 
             roi_presence = {name: False for name in ROIS}   # start every ROI as False
+
+            # Stage 3: YOLO inference
+            t0 = time.perf_counter()
             full_frame_count, roi_presence, confidence_avg, r0 = process_frame(frame, model, roi_presence, conf, imgsz)
+            tracker.record("inference", (time.perf_counter() - t0) * 1000.0)
+
+            tracker.record("end_to_end", (time.perf_counter() - t_cycle) * 1000.0)
+            tracker.tick()
+
             # seated / standing split
             seated_count = sum(roi_presence.values())
             standing_count = max(0, full_frame_count - seated_count)
