@@ -221,10 +221,10 @@ All three apps print tagged lines:
    ```
    Ensure NTP is active before measuring.
 
-2. On **Station Pi**, start the app and enable the target train ID (example `T01`):
+2. On **Station Pi**, start the app with unbuffered output (so `station.log` is written immediately):
    ```bash
    cd /path/to/INF2009_EdgeComputing/Station_Pi
-   python3 station_lora.py | tee station.log
+   python3 -u station_lora.py 2>&1 | tee station.log
    ```
    In the Station terminal, run:
    ```text
@@ -232,16 +232,17 @@ All three apps print tagged lines:
    ```
    (Station ignores data until a train is set as active.)
 
-3. On **Cabin Pi**, start Cabin app and save logs:
+3. On **Cabin Pi**, start Cabin app with unbuffered output:
    ```bash
    cd /path/to/INF2009_EdgeComputing/Ultrasonic_Pi
-   python3 cabin_lora.py | tee cabin.log
+   python3 -u cabin_lora.py 2>&1 | tee cabin.log
    ```
+   Wait at least one 20s cycle before judging log output.
 
 4. On **Camera Pi**, start Camera app and save logs:
    ```bash
    cd /path/to/INF2009_EdgeComputing/Camera_Pi
-   python3 main.py | tee camera.log
+   python3 -u main.py 2>&1 | tee camera.log
    ```
 
 5. Let the system run for enough samples, then stop all apps (`Ctrl+C`) so log files are complete.
@@ -255,6 +256,11 @@ python3 parse_actual_e2e_logs.py \
     --cabin-log cabin.log \
     --station-log station.log
 ```
+
+Troubleshooting (empty `cabin.log` / `station.log`):
+- If log files stay empty while process is still running, make sure you used `python3 -u ... | tee ...` (unbuffered mode).
+- On Station Pi, seeing only startup text is normal until data arrives; you must run `ARRIVE <TrainID>` first (example `ARRIVE T01`).
+- If Station shows `[WARNING] No Serial Port found. Input commands manually.`, LoRa hardware is not connected. In that case, no real Cabin→Station packets will arrive.
 
 Exact formulas used by the parser:
 - Camera-to-dashboard:
