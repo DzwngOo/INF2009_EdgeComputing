@@ -6,7 +6,10 @@ from ultralytics import YOLO
 # ---------- data model ----------
 @dataclass
 class InferenceResult:
+    msg_id: str
     ts_ms: int
+    cam_capture_start_ns: int
+    cam_capture_start_perf_ns: int
     # person_count: int
     total_count: int
     seated_count: int
@@ -20,7 +23,10 @@ class InferenceResult:
 
     def to_json(self) -> str:
         return json.dumps({
+            "msg_id": self.msg_id,
             "ts_ms": self.ts_ms,
+            "cam_capture_start_ns": self.cam_capture_start_ns,
+            "cam_capture_start_perf_ns": self.cam_capture_start_perf_ns,
             # "person_count": self.person_count,
             "total_count": self.total_count,
             "seated_count": self.seated_count,
@@ -241,6 +247,7 @@ def inference_loop(
     next_t = time.perf_counter()
 
     tracker = _LatencyTracker(report_every=latency_report_every)
+    msg_seq = 0
 
     try:
         while not stop_evt.is_set():
@@ -253,6 +260,8 @@ def inference_loop(
             # ----------------------------------------------------------------------
 
             t_cycle = time.perf_counter()
+            t_capture_start_ns = time.time_ns()
+            t_capture_start_perf_ns = time.perf_counter_ns()
 
             # Stage 1-2: capture + preprocess (cap.read; resize happens inside model.predict via imgsz)
             t0 = time.perf_counter()
@@ -285,7 +294,10 @@ def inference_loop(
 
             # package metadata for MQTT thread
             result = InferenceResult(
+                msg_id=f"cam-{t_capture_start_ns}-{msg_seq}",
                 ts_ms=int(time.time() * 1000),
+                cam_capture_start_ns=t_capture_start_ns,
+                cam_capture_start_perf_ns=t_capture_start_perf_ns,
                 #person_count=cabin_people,
                 total_count=full_frame_count,
                 seated_count=seated_count,
@@ -296,6 +308,7 @@ def inference_loop(
                 occupancy_ratio=occupancy_ratio,
                 cabin_status=cabin_status,
             )
+            msg_seq += 1
 
             # Push result to publish queue
             try:

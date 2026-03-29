@@ -61,6 +61,8 @@ class StationReceiver:
         Expected format:
         ID:T01|S1:1|S2:0|CAP:40|CONF:0.800|OCC:0.250|CAB:LOW|SEAT1_CAM:1|SEAT1_FINAL:TAKEN|SEAT2_CAM:0|SEAT2_FINAL:EMPTY
         """
+        station_lora_rx_ns = time.time_ns()
+        station_lora_rx_perf_ns = time.perf_counter_ns()
         raw_data = raw_data.strip()
         print(raw_data)
 
@@ -87,6 +89,11 @@ class StationReceiver:
 
             seat2_cam = int(fields['SEAT2_CAM']) if 'SEAT2_CAM' in fields else None
             seat2_final = fields.get('SEAT2_FINAL')
+            msg_id = fields.get('MID')
+            cam_capture_start_ns = int(fields['CAM_CAP_NS']) if 'CAM_CAP_NS' in fields else None
+            cam_capture_start_perf_ns = int(fields['CAM_CAP_PNS']) if 'CAM_CAP_PNS' in fields else None
+            cam_publish_done_ns = int(fields['CAM_PUB_NS']) if 'CAM_PUB_NS' in fields else None
+            cam_publish_done_perf_ns = int(fields['CAM_PUB_PNS']) if 'CAM_PUB_PNS' in fields else None
 
             ultrasonic_text1 = "TAKEN" if received_status1 == 1 else "EMPTY"
             ultrasonic_text2 = "TAKEN" if received_status2 == 1 else "EMPTY"
@@ -130,6 +137,21 @@ class StationReceiver:
                     seat2_cam=seat2_cam_text,
                     seat2_final=seat2_final
                 )
+
+                station_dashboard_done_ns = time.time_ns()
+                station_dashboard_done_perf_ns = time.perf_counter_ns()
+                if msg_id:
+                    print(
+                        f"[E2E_LOG][STATION] msg_id={msg_id} "
+                        f"station_lora_rx_ns={station_lora_rx_ns} "
+                        f"station_lora_rx_perf_ns={station_lora_rx_perf_ns} "
+                        f"station_dashboard_done_ns={station_dashboard_done_ns} "
+                        f"station_dashboard_done_perf_ns={station_dashboard_done_perf_ns} "
+                        f"cam_capture_start_ns={cam_capture_start_ns if cam_capture_start_ns is not None else -1} "
+                        f"cam_capture_start_perf_ns={cam_capture_start_perf_ns if cam_capture_start_perf_ns is not None else -1} "
+                        f"cam_mqtt_publish_done_ns={cam_publish_done_ns if cam_publish_done_ns is not None else -1} "
+                        f"cam_mqtt_publish_done_perf_ns={cam_publish_done_perf_ns if cam_publish_done_perf_ns is not None else -1}"
+                    )
             else:
                 print(f"[IGNORE] Packet train ID {received_id} does not match active train {self.active_train}")
 

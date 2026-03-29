@@ -198,6 +198,48 @@ collect timestamps from each host (Camera Pi, Ultrasonic/Cabin Pi, Station Pi).
 The two commands above are the core automated checks, but full multi-device
 latency still requires running Cabin + Station components concurrently.
 
+### 3.4.3 Actual cross-device E2E (implemented)
+
+Yes — you can now measure actual end-to-end automatically by propagating one
+`msg_id` across Camera → Cabin → Station and parsing timestamp logs.
+
+What is now logged:
+- Camera Pi: capture start + MQTT publish done
+- Cabin Pi: ultrasonic poll done + LoRa TX done
+- Station Pi: LoRa RX + dashboard update done
+
+All three apps print tagged lines:
+- `[E2E_LOG][CAMERA] ...`
+- `[E2E_LOG][CABIN] ...`
+- `[E2E_LOG][STATION] ...`
+
+Collect logs from each Pi into files (example names):
+- `camera.log`
+- `cabin.log`
+- `station.log`
+
+Then run one parser command:
+
+```bash
+cd /path/to/INF2009_EdgeComputing
+python3 parse_actual_e2e_logs.py \
+    --camera-log camera.log \
+    --cabin-log cabin.log \
+    --station-log station.log
+```
+
+Exact formulas used by the parser:
+- Camera-to-dashboard:
+  - `E2E_actual_ms = (station_dashboard_done_ns - cam_capture_start_ns) / 1e6`
+- Cabin-sensor-to-dashboard:
+  - `E2E_actual_ms = (station_dashboard_done_ns - cabin_ultra_poll_done_ns) / 1e6`
+
+Important:
+- For cross-host subtraction, the parser uses wall-clock epoch timestamps (`time.time_ns()`),
+  so keep clocks synced (chrony/NTP).
+- `time.perf_counter_ns()` is still logged for per-host stage analysis but should not be
+  directly subtracted across machines without offset compensation.
+
 # 2. Station Pi
 
 ## 2.1 Setup

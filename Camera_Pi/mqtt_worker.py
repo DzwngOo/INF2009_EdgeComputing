@@ -1,5 +1,6 @@
 from inference_worker import InferenceResult
 import queue, threading
+import time
 import paho.mqtt.client as mqtt
 
 # ---------- mqtt publisher thread ----------
@@ -36,7 +37,17 @@ def mqtt_publisher_loop(
             payload = msg.to_json()  # Assuming you want to send the message as a JSON string
             
             # Publish the message to the broker
-            client.publish(topic, payload, qos=qos, retain=retain)
+            info = client.publish(topic, payload, qos=qos, retain=retain)
+            cam_publish_done_ns = time.time_ns()
+            cam_publish_done_perf_ns = time.perf_counter_ns()
+            print(
+                f"[E2E_LOG][CAMERA] msg_id={msg.msg_id} "
+                f"cam_capture_start_ns={msg.cam_capture_start_ns} "
+                f"cam_capture_start_perf_ns={msg.cam_capture_start_perf_ns} "
+                f"cam_mqtt_publish_done_ns={cam_publish_done_ns} "
+                f"cam_mqtt_publish_done_perf_ns={cam_publish_done_perf_ns} "
+                f"mid={getattr(info, 'mid', -1)}"
+            )
         except queue.Empty:
             continue
 

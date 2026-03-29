@@ -86,6 +86,26 @@ def main(train_id="T01"):
                     f"|SEAT2_FINAL:{final_seat2_status}"
                 )
 
+                msg_id = message_data.get("msg_id")
+                if msg_id:
+                    msg += f"|MID:{msg_id}"
+
+                cam_capture_start_ns = message_data.get("cam_capture_start_ns")
+                if cam_capture_start_ns is not None:
+                    msg += f"|CAM_CAP_NS:{int(cam_capture_start_ns)}"
+
+                cam_capture_start_perf_ns = message_data.get("cam_capture_start_perf_ns")
+                if cam_capture_start_perf_ns is not None:
+                    msg += f"|CAM_CAP_PNS:{int(cam_capture_start_perf_ns)}"
+
+                cam_mqtt_publish_done_ns = message_data.get("cam_mqtt_publish_done_ns")
+                if cam_mqtt_publish_done_ns is not None:
+                    msg += f"|CAM_PUB_NS:{int(cam_mqtt_publish_done_ns)}"
+
+                cam_mqtt_publish_done_perf_ns = message_data.get("cam_mqtt_publish_done_perf_ns")
+                if cam_mqtt_publish_done_perf_ns is not None:
+                    msg += f"|CAM_PUB_PNS:{int(cam_mqtt_publish_done_perf_ns)}"
+
                 print(f"\n[20s Cycle] Transmitting to Station: {msg}")
                 print(f"   L Seat 1 Raw Distance: {distance1:.2f}cm")
                 print(f"   L Seat 1 Interpretation: {status_desc1} (<20cm is TAKEN)")
@@ -133,7 +153,19 @@ def main(train_id="T01"):
             if lora_serial:
                 try:
                     print(msg)
+                    cabin_ultra_poll_done_ns = time.time_ns()
+                    cabin_ultra_poll_done_perf_ns = time.perf_counter_ns()
                     lora_serial.write((msg + '\n').encode('utf-8'))
+                    cabin_lora_tx_done_ns = time.time_ns()
+                    cabin_lora_tx_done_perf_ns = time.perf_counter_ns()
+                    if message_data is not None and message_data.get("msg_id"):
+                        print(
+                            f"[E2E_LOG][CABIN] msg_id={message_data['msg_id']} "
+                            f"cabin_ultra_poll_done_ns={cabin_ultra_poll_done_ns} "
+                            f"cabin_ultra_poll_done_perf_ns={cabin_ultra_poll_done_perf_ns} "
+                            f"cabin_lora_tx_done_ns={cabin_lora_tx_done_ns} "
+                            f"cabin_lora_tx_done_perf_ns={cabin_lora_tx_done_perf_ns}"
+                        )
                 except Exception as e:
                     print(f"   [ERROR] LoRa Write Failed: {e}")
 
