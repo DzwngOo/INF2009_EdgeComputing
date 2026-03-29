@@ -54,14 +54,14 @@ def main(train_id="T01"):
                 lora_serial = lora_helper.connect_lora()
 
             # if LoRa link is back, resend cached messages first
-            if lora_serial:
-                retry_ok = lora_helper.flush_cached_messages(lora_serial)
-                if not retry_ok:
-                    try:
-                        lora_serial.close()
-                    except Exception:
-                        pass
-                    lora_serial = None
+            # if lora_serial:
+            #     retry_ok = lora_helper.flush_cached_messages(lora_serial)
+            #     if not retry_ok:
+            #         try:
+            #             lora_serial.close()
+            #         except Exception:
+            #             pass
+            #         lora_serial = None
 
             # Update per-camera states from MQTT
             camera_helper.drain_camera_queue(mqtt_queue, camera_states)
@@ -166,11 +166,13 @@ def main(train_id="T01"):
             print(f"   L Final Seat 1 Status: {final_seat1_status}")
             print("=" * 10)
 
-            # cache first in SQLite
+            # cache latest state first in SQLite
             sqlite_helper.cache_message(msg_id, msg)
-            print(f"   [CACHE] Stored message {msg_id} in SQLite. Pending now: {sqlite_helper.count_pending_messages()}")
+            print(f"   [CACHE] Stored latest message {msg_id} in SQLite. Pending now: {sqlite_helper.count_pending_messages()}")
+
+            # send only ONE packet this cycle: the latest cached one
+            pending = sqlite_helper.get_one_pending_message()
         # ==== Dennis's ====
-            
 
         # ==== XK's ====
         # while True:
@@ -191,23 +193,45 @@ def main(train_id="T01"):
         #     print(f"   L Raw Distance: {distance:.2f}cm")
         #     print(f"   L Interpretation: {status_desc} (<20cm is TAKEN)")
         # ==== XK's ====
+ 
             
+            # if lora_serial:
+            #     ok = lora_helper.try_send_lora(lora_serial, msg)
+            #     if ok:
+            #         sqlite_helper.delete_cached_message(msg_id)
+            #         print(f"   [SEND OK] Message {msg_id} sent and removed from SQLite cache.")
+            #         # print(f"   [SEND OK] ok")
+            #     else:
+            #         print(f"   [SEND FAIL] Message {msg_id} kept in SQLite cache for retry.")
+            #         # print(f"   [SEND OK] fail")
+            #         try:
+            #             lora_serial.close()
+            #         except Exception:
+            #             pass
+            #         lora_serial = None
+            # else:
+            #     print(f"   [CACHE ONLY] No LoRa connection. Message {msg_id} kept in SQLite cache.")
+            if pending is not None:
+                outbound_id, outbound_msg = pending
+            else:
+                outbound_id, outbound_msg = msg_id, msg
+
+            print(f"   [OUTBOUND] Sending one packet this cycle: {outbound_msg}")
+
             if lora_serial:
-                ok = lora_helper.try_send_lora(lora_serial, msg)
+                ok = lora_helper.try_send_lora(lora_serial, outbound_msg)
                 if ok:
-                    sqlite_helper.delete_cached_message(msg_id)
-                    print(f"   [SEND OK] Message {msg_id} sent and removed from SQLite cache.")
-                    # print(f"   [SEND OK] ok")
+                    sqlite_helper.delete_cached_message(outbound_id)
+                    print(f"   [SEND OK] Message {outbound_id} sent and removed from SQLite cache.")
                 else:
-                    print(f"   [SEND FAIL] Message {msg_id} kept in SQLite cache for retry.")
-                    # print(f"   [SEND OK] fail")
+                    print(f"   [SEND FAIL] Message {outbound_id} kept in SQLite cache.")
                     try:
                         lora_serial.close()
                     except Exception:
                         pass
                     lora_serial = None
             else:
-                print(f"   [CACHE ONLY] No LoRa connection. Message {msg_id} kept in SQLite cache.")
+                print(f"   [CACHE ONLY] No LoRa connection. Latest message remains in SQLite cache.")
 
             time.sleep(TX_INTERVAL_SECONDS)
             

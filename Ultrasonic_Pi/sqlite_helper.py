@@ -18,30 +18,57 @@ def init_db():
     conn.commit()
     conn.close()
 
+# def cache_message(msg_id, payload):
+#     """Store outgoing message before trying to send it."""
+#     conn = sqlite3.connect(DB_PATH)
+#     cur = conn.cursor()
+#     cur.execute("""
+#         INSERT OR IGNORE INTO pending_messages (msg_id, created_at, payload)
+#         VALUES (?, ?, ?)
+#     """, (msg_id, time.time(), payload))
+#     conn.commit()
+#     conn.close()
 def cache_message(msg_id, payload):
-    """Store outgoing message before trying to send it."""
+    """Keep only the latest pending message."""
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+
+    # delete all older pending messages first
+    cur.execute("DELETE FROM pending_messages")
+
+    # insert only the newest message
     cur.execute("""
-        INSERT OR IGNORE INTO pending_messages (msg_id, created_at, payload)
+        INSERT INTO pending_messages (msg_id, created_at, payload)
         VALUES (?, ?, ?)
     """, (msg_id, time.time(), payload))
+
     conn.commit()
     conn.close()
-
-def get_pending_messages(limit=RETRY_BATCH_SIZE):
-    """Read oldest unsent messages first (FIFO retransmission)."""
+# def get_pending_messages(limit=RETRY_BATCH_SIZE):
+#     """Read oldest unsent messages first (FIFO retransmission)."""
+#     conn = sqlite3.connect(DB_PATH)
+#     cur = conn.cursor()
+#     cur.execute("""
+#         SELECT msg_id, payload
+#         FROM pending_messages
+#         ORDER BY created_at ASC
+#         LIMIT ?
+#     """, (limit,))
+#     rows = cur.fetchall()
+#     conn.close()
+#     return rows
+def get_one_pending_message():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("""
         SELECT msg_id, payload
         FROM pending_messages
-        ORDER BY created_at ASC
-        LIMIT ?
-    """, (limit,))
-    rows = cur.fetchall()
+        ORDER BY created_at DESC
+        LIMIT 1
+    """)
+    row = cur.fetchone()
     conn.close()
-    return rows
+    return row
 
 def delete_cached_message(msg_id):
     """Remove message from cache only after successful send."""
