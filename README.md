@@ -213,12 +213,40 @@ All three apps print tagged lines:
 - `[E2E_LOG][CABIN] ...`
 - `[E2E_LOG][STATION] ...`
 
-Collect logs from each Pi into files (example names):
-- `camera.log`
-- `cabin.log`
-- `station.log`
+### Final workflow (what to run)
 
-Then run one parser command:
+1. Sync clocks on all 3 Pis (Camera/Cabin/Station), then verify:
+   ```bash
+   timedatectl status
+   ```
+   Ensure NTP is active before measuring.
+
+2. On **Station Pi**, start the app and enable the target train ID (example `T01`):
+   ```bash
+   cd /path/to/INF2009_EdgeComputing/Station_Pi
+   python3 station_lora.py | tee station.log
+   ```
+   In the Station terminal, run:
+   ```text
+   ARRIVE T01
+   ```
+   (Station ignores data until a train is set as active.)
+
+3. On **Cabin Pi**, start Cabin app and save logs:
+   ```bash
+   cd /path/to/INF2009_EdgeComputing/Ultrasonic_Pi
+   python3 cabin_lora.py | tee cabin.log
+   ```
+
+4. On **Camera Pi**, start Camera app and save logs:
+   ```bash
+   cd /path/to/INF2009_EdgeComputing/Camera_Pi
+   python3 main.py | tee camera.log
+   ```
+
+5. Let the system run for enough samples, then stop all apps (`Ctrl+C`) so log files are complete.
+
+6. Copy `camera.log`, `cabin.log`, `station.log` to one machine with the repo and run:
 
 ```bash
 cd /path/to/INF2009_EdgeComputing
