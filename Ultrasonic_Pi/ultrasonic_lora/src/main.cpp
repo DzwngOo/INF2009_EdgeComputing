@@ -106,21 +106,35 @@ void setup() {
 
 void loop() {
   // 1. CHECK INTERRUPT FLAG (Did previous TX finish?)
+  // if (transmittedFlag) {
+  //   // Reset flag safely
+  //   enableInterrupt = false;
+  //   transmittedFlag = false;
+  //   enableInterrupt = true;
+
+  //   // Turn OFF LED -> Successful TX end
+  //   digitalWrite(RAD_LED, LOW); 
+  //   Serial.println("TX Done");
+  // }
   if (transmittedFlag) {
-    // Reset flag safely
     enableInterrupt = false;
     transmittedFlag = false;
     enableInterrupt = true;
 
-    // Turn OFF LED -> Successful TX end
-    digitalWrite(RAD_LED, LOW); 
-    Serial.println("TX Done");
+    int state = radio.finishTransmit();
+    Serial.print("TX Done, finishTransmit state=");
+    Serial.println(state);
+
+    digitalWrite(RAD_LED, LOW);
   }
 
   // 2. CHECK SERIAL INPUT (From Raspberry Pi)
   if (Serial.available()) {
     String msg = Serial.readStringUntil('\n'); // Read until newline
     msg.trim(); // Remove whitespace
+    Serial.print("SERIAL RX: [");
+    Serial.print(msg);
+    Serial.println("]");
 
     if (msg.length() > 0) {
       Serial.println("Sending: " + msg);
