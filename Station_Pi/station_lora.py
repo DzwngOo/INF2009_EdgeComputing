@@ -76,8 +76,6 @@ class StationReceiver:
             received_id = fields['ID']
             received_status1 = int(fields['S1'])
             received_status2 = int(fields['S2'])
-            sensor1_valid = int(fields['S1V']) if 'S1V' in fields else None
-            sensor2_valid = int(fields['S2V']) if 'S2V' in fields else None
 
             capacity = int(fields['CAP']) if 'CAP' in fields else None
             confidence_avg = float(fields['CONF']) if 'CONF' in fields else None
@@ -100,10 +98,6 @@ class StationReceiver:
             print(f"   L Train ID: {received_id}")
             print(f"   L Ultrasonic Seat 1: {ultrasonic_text1}")
             print(f"   L Ultrasonic Seat 2: {ultrasonic_text2}")
-            if sensor1_valid is not None:
-                print(f"   L Ultrasonic Seat 1 Signal Valid: {bool(sensor1_valid)}")
-            if sensor2_valid is not None:
-                print(f"   L Ultrasonic Seat 2 Signal Valid: {bool(sensor2_valid)}")
 
             if capacity is not None:
                 print(f"   L Capacity: {capacity}")

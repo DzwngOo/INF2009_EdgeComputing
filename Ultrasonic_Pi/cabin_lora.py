@@ -10,22 +10,8 @@ def main(train_id="T01"):
     
     # Initialize the sensor (starts its own background thread)
     # sensor = SonarSensor()
-    sensor1 = SonarSensor(
-        trig_pin=23,
-        echo_pin=24,
-        occupied_threshold_cm=20,
-        min_valid_cm=3.0,
-        invalid_hold_s=2.0,
-        status_change_confirmations=2,
-    )  # 1st seat
-    sensor2 = SonarSensor(
-        trig_pin=17,
-        echo_pin=27,
-        occupied_threshold_cm=20,
-        min_valid_cm=3.0,
-        invalid_hold_s=2.0,
-        status_change_confirmations=2,
-    )  # 2nd seat
+    sensor1 = SonarSensor(trig_pin=23, echo_pin=24) # 1st seat
+    sensor2 = SonarSensor(trig_pin=17, echo_pin=27) # 2nd seat
     
     # Initialize Serial connection to LoRa module (PlatformIO device)
     lora_serial = None
@@ -59,11 +45,9 @@ def main(train_id="T01"):
         while True:
             seat_status1 = sensor1.get_latest_status()
             distance1 = sensor1.get_latest_distance()
-            distance1_valid = sensor1.get_latest_distance_valid()
 
             seat_status2 = sensor2.get_latest_status()
             distance2 = sensor2.get_latest_distance()
-            distance2_valid = sensor2.get_latest_distance_valid()
 
             status_desc1 = "TAKEN" if seat_status1 == 1 else "EMPTY"
             status_desc2 = "TAKEN" if seat_status2 == 1 else "EMPTY"
@@ -92,8 +76,6 @@ def main(train_id="T01"):
                     f"ID:{train_id}"
                     f"|S1:{seat_status1}"
                     f"|S2:{seat_status2}"
-                    f"|S1V:{int(distance1_valid)}"
-                    f"|S2V:{int(distance2_valid)}"
                     f"|CAP:{message_data['capacity']}"
                     f"|CONF:{message_data['confidence_avg']:.3f}"
                     f"|OCC:{message_data['occupancy_ratio']:.3f}"
@@ -105,19 +87,11 @@ def main(train_id="T01"):
                 )
 
                 print(f"\n[20s Cycle] Transmitting to Station: {msg}")
-                if distance1 > 0:
-                    print(f"   L Seat 1 Raw Distance: {distance1:.2f}cm")
-                else:
-                    print("   L Seat 1 Raw Distance: NO_ECHO")
-                print(f"   L Seat 1 Distance Valid: {distance1_valid}")
+                print(f"   L Seat 1 Raw Distance: {distance1:.2f}cm")
                 print(f"   L Seat 1 Interpretation: {status_desc1} (<20cm is TAKEN)")
                 print(f"   L Final Seat 1 Status: {final_seat1_status}")
 
-                if distance2 > 0:
-                    print(f"   L Seat 2 Raw Distance: {distance2:.2f}cm")
-                else:
-                    print("   L Seat 2 Raw Distance: NO_ECHO")
-                print(f"   L Seat 2 Distance Valid: {distance2_valid}")
+                print(f"   L Seat 2 Raw Distance: {distance2:.2f}cm")
                 print(f"   L Seat 2 Interpretation: {status_desc2} (<20cm is TAKEN)")
                 print(f"   L Final Seat 2 Status: {final_seat2_status}")
 
@@ -126,22 +100,12 @@ def main(train_id="T01"):
                     f"ID:{train_id}"
                     f"|S1:{seat_status1}"
                     f"|S2:{seat_status2}"
-                    f"|S1V:{int(distance1_valid)}"
-                    f"|S2V:{int(distance2_valid)}"
                 )
 
                 print(f"\n[20s Cycle] Transmitting to Station: {msg}")
-                if distance1 > 0:
-                    print(f"   L Seat 1 Raw Distance: {distance1:.2f}cm")
-                else:
-                    print("   L Seat 1 Raw Distance: NO_ECHO")
-                print(f"   L Seat 1 Distance Valid: {distance1_valid}")
+                print(f"   L Seat 1 Raw Distance: {distance1:.2f}cm")
                 print(f"   L Seat 1 Interpretation: {status_desc1} (<20cm is TAKEN)")
-                if distance2 > 0:
-                    print(f"   L Seat 2 Raw Distance: {distance2:.2f}cm")
-                else:
-                    print("   L Seat 2 Raw Distance: NO_ECHO")
-                print(f"   L Seat 2 Distance Valid: {distance2_valid}")
+                print(f"   L Seat 2 Raw Distance: {distance2:.2f}cm")
                 print(f"   L Seat 2 Interpretation: {status_desc2} (<20cm is TAKEN)")
         # ==== Deric's ====
 
@@ -180,7 +144,6 @@ def main(train_id="T01"):
     finally:
         # Always clean up the sensor thread on exit
         sensor1.stop()
-        sensor2.stop()
         if lora_serial:
             lora_serial.close()
 
