@@ -56,7 +56,7 @@ def compute_cabin_status(people_count, capacity):
         status = "EMPTY"
     elif ratio < 0.4:
         status = "LOW"
-    elif ratio < 0.6:
+    elif ratio < 0.7:
         status = "MEDIUM"
     elif ratio < 0.9:
         status = "HIGH"
