@@ -197,137 +197,6 @@
 // }
 
 
-// #include <Arduino.h>
-// #include <SPI.h>
-// #include <RadioLib.h>
-
-// #ifndef RAD_LED
-//   #define RAD_LED 37
-// #endif
-
-// // LoRa Pins (LilyGo T3S3 SX1280)
-// #define LORA_SCK    5
-// #define LORA_MISO   3
-// #define LORA_MOSI   6
-// #define LORA_CS     7
-// #define LORA_RST    8
-// #define LORA_DIO1   9
-// #define LORA_BUSY   36
-
-// Module* radioModule = new Module(LORA_CS, LORA_DIO1, LORA_RST, LORA_BUSY);
-// SX1280 radio(radioModule);
-
-// // TX state
-// volatile bool transmittedFlag = false;
-// volatile bool enableInterrupt = true;
-// volatile bool txBusy = false;
-
-// #if defined(ESP8266) || defined(ESP32)
-//   ICACHE_RAM_ATTR
-// #endif
-// void setFlag(void) {
-//   if (!enableInterrupt) return;
-//   transmittedFlag = true;
-// }
-
-// void setup() {
-//   pinMode(RAD_LED, OUTPUT);
-
-//   Serial.begin(115200);
-//   Serial.setTimeout(50);   // keep readStringUntil from blocking too long
-//   delay(3000);
-//   Serial.println("\n--- Cabin Transmitter Booting ---");
-
-//   // Boot LED
-//   digitalWrite(RAD_LED, HIGH);
-//   delay(1000);
-//   digitalWrite(RAD_LED, LOW);
-//   delay(300);
-
-//   SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI);
-
-//   Serial.print("[INFO] Initializing Radio... ");
-
-//   #if defined(SX1280_RXEN) && defined(SX1280_TXEN)
-//     radioModule->setRfSwitchPins(SX1280_RXEN, SX1280_TXEN);
-//     Serial.print("(PA/LNA Enabled) ");
-//   #endif
-
-//   int state = radio.begin(2400.0, 406.25, 7, 5, 0x12, 10, 12);
-
-//   if (state == RADIOLIB_ERR_NONE) {
-//     radio.setDio1Action(setFlag);
-//     Serial.println("Init Success. Waiting for Pi messages...");
-//   } else {
-//     Serial.print("Init Failed, code ");
-//     Serial.println(state);
-
-//     while (true) {
-//       for (int i = 0; i < 3; i++) {
-//         digitalWrite(RAD_LED, HIGH); delay(100);
-//         digitalWrite(RAD_LED, LOW);  delay(100);
-//       }
-//       delay(300);
-//       for (int i = 0; i < 3; i++) {
-//         digitalWrite(RAD_LED, HIGH); delay(300);
-//         digitalWrite(RAD_LED, LOW);  delay(100);
-//       }
-//       delay(300);
-//       for (int i = 0; i < 3; i++) {
-//         digitalWrite(RAD_LED, HIGH); delay(100);
-//         digitalWrite(RAD_LED, LOW);  delay(100);
-//       }
-//       delay(1000);
-//     }
-//   }
-// }
-
-// void loop() {
-//   // finish previous TX
-//   if (transmittedFlag) {
-//     enableInterrupt = false;
-//     transmittedFlag = false;
-//     enableInterrupt = true;
-
-//     int state = radio.finishTransmit();
-//     Serial.print("TX Done, finishTransmit state=");
-//     Serial.println(state);
-
-//     txBusy = false;
-//     digitalWrite(RAD_LED, LOW);
-//   }
-
-//   // read ONE line from Raspberry Pi
-//   if (Serial.available()) {
-//     String msg = Serial.readStringUntil('\n');
-//     msg.trim();
-
-//     if (msg.length() > 0) {
-//       Serial.print("SERIAL RX: [");
-//       Serial.print(msg);
-//       Serial.println("]");
-
-//       if (!txBusy) {
-//         digitalWrite(RAD_LED, HIGH);
-
-//         int state = radio.startTransmit(msg);
-//         if (state == RADIOLIB_ERR_NONE) {
-//           txBusy = true;
-//           Serial.println("TX Start OK");
-//         } else {
-//           Serial.print("TX Start Failed: ");
-//           Serial.println(state);
-//           digitalWrite(RAD_LED, LOW);
-//         }
-//       } else {
-//         Serial.println("TX BUSY - dropping incoming serial message");
-//       }
-//     }
-//   }
-
-//   // Heartbeat disabled for debugging/stability
-// }
-
 #include <Arduino.h>
 #include <SPI.h>
 #include <RadioLib.h>
@@ -351,11 +220,7 @@ SX1280 radio(radioModule);
 // TX state
 volatile bool transmittedFlag = false;
 volatile bool enableInterrupt = true;
-bool txBusy = false;
-
-// latest-only pending buffer
-String pendingMsg = "";
-bool hasPendingMsg = false;
+volatile bool txBusy = false;
 
 #if defined(ESP8266) || defined(ESP32)
   ICACHE_RAM_ATTR
@@ -369,10 +234,11 @@ void setup() {
   pinMode(RAD_LED, OUTPUT);
 
   Serial.begin(115200);
-  Serial.setTimeout(50);
+  Serial.setTimeout(50);   // keep readStringUntil from blocking too long
   delay(3000);
   Serial.println("\n--- Cabin Transmitter Booting ---");
 
+  // Boot LED
   digitalWrite(RAD_LED, HIGH);
   delay(1000);
   digitalWrite(RAD_LED, LOW);
@@ -416,44 +282,23 @@ void setup() {
   }
 }
 
-void startPendingTransmit() {
-  if (!hasPendingMsg || txBusy) return;
-
-  Serial.print("TX START: [");
-  Serial.print(pendingMsg);
-  Serial.println("]");
-
-  digitalWrite(RAD_LED, HIGH);
-
-  int state = radio.startTransmit(pendingMsg);
-  if (state == RADIOLIB_ERR_NONE) {
-    txBusy = true;
-    hasPendingMsg = false;   // remove from pending once TX really starts
-  } else {
-    Serial.print("TX Start Failed: ");
-    Serial.println(state);
-    digitalWrite(RAD_LED, LOW);
-    // keep hasPendingMsg=true so loop can retry later
-  }
-}
-
 void loop() {
-  // 1. finish previous TX
+  // finish previous TX
   if (transmittedFlag) {
     enableInterrupt = false;
     transmittedFlag = false;
     enableInterrupt = true;
 
     int state = radio.finishTransmit();
-    Serial.print("TX DONE, finishTransmit state=");
+    Serial.print("TX Done, finishTransmit state=");
     Serial.println(state);
 
     txBusy = false;
     digitalWrite(RAD_LED, LOW);
   }
 
-  // 2. read latest serial input from Raspberry Pi
-  while (Serial.available()) {
+  // read ONE line from Raspberry Pi
+  if (Serial.available()) {
     String msg = Serial.readStringUntil('\n');
     msg.trim();
 
@@ -462,16 +307,23 @@ void loop() {
       Serial.print(msg);
       Serial.println("]");
 
-      // latest-only overwrite
-      pendingMsg = msg;
-      hasPendingMsg = true;
+      if (!txBusy) {
+        digitalWrite(RAD_LED, HIGH);
+
+        int state = radio.startTransmit(msg);
+        if (state == RADIOLIB_ERR_NONE) {
+          txBusy = true;
+          Serial.println("TX Start OK");
+        } else {
+          Serial.print("TX Start Failed: ");
+          Serial.println(state);
+          digitalWrite(RAD_LED, LOW);
+        }
+      } else {
+        Serial.println("TX BUSY - dropping incoming serial message");
+      }
     }
   }
 
-  // 3. if idle and we have a pending message, transmit it
-  if (!txBusy && hasPendingMsg) {
-    startPendingTransmit();
-  }
-
-  // Heartbeat disabled
+  // Heartbeat disabled for debugging/stability
 }

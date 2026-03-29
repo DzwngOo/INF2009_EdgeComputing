@@ -33,10 +33,8 @@ def cache_message(msg_id, payload):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    # delete all older pending messages first
     cur.execute("DELETE FROM pending_messages")
 
-    # insert only the newest message
     cur.execute("""
         INSERT INTO pending_messages (msg_id, created_at, payload)
         VALUES (?, ?, ?)
