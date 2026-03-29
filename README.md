@@ -97,6 +97,29 @@ python3 measure_latency.py \
 
 Results are saved to `latency_results.csv` (one row per cycle).
 
+You can automatically parse that CSV into a single end-to-end summary:
+
+```bash
+cd Camera_Pi
+python3 parse_latency_results.py --in latency_results.csv
+```
+
+This reports:
+- Camera-side measured E2E (mean, p99)
+- Full estimated E2E (Camera + default Stage 4/7/8-9 values)
+- Budget check against 2000 ms
+
+To override remote-stage assumptions:
+
+```bash
+python3 parse_latency_results.py \
+    --in latency_results.csv \
+    --stage4-ms 18 \
+    --stage7-ms 460 \
+    --stage8_9-ms 220 \
+    --budget-ms 2000
+```
+
 **Live monitoring during normal operation:**
 Per-stage latency (mean ± σ, p99) is also printed automatically every 100 frames by
 `inference_worker.py` when `main.py` is running. The interval can be changed via the
