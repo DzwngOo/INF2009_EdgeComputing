@@ -4,7 +4,8 @@ from dashboard_web.app import DashboardState, create_flask_app, flask_thread
 class StationReceiver:
     def __init__(self, dashboard_state):
         self.active_train = None
-        self.seat_status = None # None means unconfirmed
+        self.seat_status1 = None
+        self.seat_status2 = None
         self.dashboard_state = dashboard_state
 
     def handle_arrival(self, train_id):
@@ -12,17 +13,21 @@ class StationReceiver:
         print(f"\n[EVENT] Train {train_id} has arrived at the platform.")
         print(f"[SYSTEM] Creating secure link to {train_id}...")
         self.active_train = train_id
-        self.seat_status = None
+        self.seat_status1 = None
+        self.seat_status2 = None
 
         self.dashboard_state.update(
             active_train=train_id,
-            ultrasonic_status="UNKNOWN",
+            ultrasonic_status1="UNKNOWN",
+            ultrasonic_status2="UNKNOWN",
             capacity=None,
             confidence_avg=None,
             occupancy_ratio=None,
             cabin_status=None,
             seat1_cam="UNKNOWN",
-            seat1_final=None
+            seat1_final=None,
+            seat2_cam="UNKNOWN",
+            seat2_final=None
         )
 
     def handle_departure(self):
@@ -31,17 +36,21 @@ class StationReceiver:
             print(f"\n[EVENT] Train {self.active_train} has departed.")
             print("[SYSTEM] Closing link. Returning to IDLE mode.")
             self.active_train = None
-            self.seat_status = None
+            self.seat_status1 = None
+            self.seat_status2 = None
 
             self.dashboard_state.update(
                 active_train=None,
-                ultrasonic_status="UNKNOWN",
+                ultrasonic_status1="UNKNOWN",
+                ultrasonic_status2="UNKNOWN",
                 capacity=None,
                 confidence_avg=None,
                 occupancy_ratio=None,
                 cabin_status=None,
                 seat1_cam="UNKNOWN",
-                seat1_final=None
+                seat1_final=None,
+                seat2_cam="UNKNOWN",
+                seat2_final=None
             )
         else:
             print("[ERROR] No train is currently at the platform.")
@@ -49,15 +58,13 @@ class StationReceiver:
     def process_lora_packet(self, raw_data):
         """
         Parses incoming LoRa data.
-        Expected format: "ID:T01|S:1"
+        Expected format:
+        ID:T01|S1:1|S2:0|CAP:40|CONF:0.800|OCC:0.250|CAB:LOW|SEAT1_CAM:1|SEAT1_FINAL:TAKEN|SEAT2_CAM:0|SEAT2_FINAL:EMPTY
         """
-        # Trim potential whitespace
         raw_data = raw_data.strip()
         print(raw_data)
-        
+
         if not self.active_train:
-            # Uncomment to debug ignored packets
-            # print(f"[IGNORE] Received '{raw_data}' but no train is at platform.")
             return
 
         try:
@@ -65,50 +72,72 @@ class StationReceiver:
             for part in raw_data.split('|'):
                 key, value = part.split(':', 1)
                 fields[key] = value
-            
-            received_id = fields['ID']
-            received_status = int(fields['S'])
-            capacity = int(fields['CAP'])
-            confidence_avg = float(fields['CONF'])
-            occupancy_ratio = float(fields['OCC'])
-            cabin_status = fields['CAB']
-            seat1_cam = int(fields['SEAT1_CAM'])
-            seat1_final = fields['SEAT1_FINAL']
 
-            ultrasonic_text = "TAKEN" if received_status == 1 else "EMPTY"
-            seat1_cam_text = "TAKEN" if seat1_cam == 1 else "EMPTY"
+            received_id = fields['ID']
+            received_status1 = int(fields['S1'])
+            received_status2 = int(fields['S2'])
+
+            capacity = int(fields['CAP']) if 'CAP' in fields else None
+            confidence_avg = float(fields['CONF']) if 'CONF' in fields else None
+            occupancy_ratio = float(fields['OCC']) if 'OCC' in fields else None
+            cabin_status = fields.get('CAB')
+
+            seat1_cam = int(fields['SEAT1_CAM']) if 'SEAT1_CAM' in fields else None
+            seat1_final = fields.get('SEAT1_FINAL')
+
+            seat2_cam = int(fields['SEAT2_CAM']) if 'SEAT2_CAM' in fields else None
+            seat2_final = fields.get('SEAT2_FINAL')
+
+            ultrasonic_text1 = "TAKEN" if received_status1 == 1 else "EMPTY"
+            ultrasonic_text2 = "TAKEN" if received_status2 == 1 else "EMPTY"
+
+            seat1_cam_text = "UNKNOWN" if seat1_cam is None else ("TAKEN" if seat1_cam == 1 else "EMPTY")
+            seat2_cam_text = "UNKNOWN" if seat2_cam is None else ("TAKEN" if seat2_cam == 1 else "EMPTY")
 
             print(f"\n[PARSED DATA]")
             print(f"   L Train ID: {received_id}")
-            print(f"   L Ultrasonic Status: {'TAKEN' if received_status == 1 else 'EMPTY'}")
-            print(f"   L Capacity: {capacity}")
-            print(f"   L Confidence Average: {confidence_avg:.3f}")
-            print(f"   L Occupancy Ratio: {occupancy_ratio:.3f}")
-            print(f"   L Cabin Status: {cabin_status}")
-            print(f"   L Camera Seat 1: {'TAKEN' if seat1_cam == 1 else 'EMPTY'}")
-            print(f"   L Final Seat 1: {seat1_final}")
+            print(f"   L Ultrasonic Seat 1: {ultrasonic_text1}")
+            print(f"   L Ultrasonic Seat 2: {ultrasonic_text2}")
 
-            # Update dashboard only if packet matches active train
+            if capacity is not None:
+                print(f"   L Capacity: {capacity}")
+            if confidence_avg is not None:
+                print(f"   L Confidence Average: {confidence_avg:.3f}")
+            if occupancy_ratio is not None:
+                print(f"   L Occupancy Ratio: {occupancy_ratio:.3f}")
+            if cabin_status is not None:
+                print(f"   L Cabin Status: {cabin_status}")
+
+            print(f"   L Camera Seat 1: {seat1_cam_text}")
+            print(f"   L Final Seat 1: {seat1_final}")
+            print(f"   L Camera Seat 2: {seat2_cam_text}")
+            print(f"   L Final Seat 2: {seat2_final}")
+
             if received_id == self.active_train:
+                self.seat_status1 = received_status1
+                self.seat_status2 = received_status2
+
                 self.dashboard_state.update(
                     active_train=received_id,
-                    ultrasonic_status=ultrasonic_text,
+                    ultrasonic_status1=ultrasonic_text1,
+                    ultrasonic_status2=ultrasonic_text2,
                     capacity=capacity,
                     confidence_avg=confidence_avg,
                     occupancy_ratio=occupancy_ratio,
                     cabin_status=cabin_status,
                     seat1_cam=seat1_cam_text,
-                    seat1_final=seat1_final
+                    seat1_final=seat1_final,
+                    seat2_cam=seat2_cam_text,
+                    seat2_final=seat2_final
                 )
             else:
                 print(f"[IGNORE] Packet train ID {received_id} does not match active train {self.active_train}")
-                
-        except (IndexError, ValueError):
-            # Ignore heartbeat/debug messages that are not valid data
+
+        except (IndexError, ValueError, KeyError):
             if "Heartbeat" in raw_data or "Ping" in raw_data or "CRC" in raw_data:
-                 pass # Silently ignore these known debug packets
+                pass
             else:
-                 print(f"[ERROR] Malformed packet received: {raw_data}")
+                print(f"[ERROR] Malformed packet received: {raw_data}")
 
 def serial_listener(station, port_name):
     """Background thread to listen to real LoRa hardware"""
@@ -120,18 +149,17 @@ def serial_listener(station, port_name):
                 try:
                     line = ser.readline().decode('utf-8', errors='ignore').strip()
                     print(f"[RAW] {repr(line)}")
-                    # The firmware might output: "[RX] Data: ID:T01|S:1 | RSSI: ..."
+
                     if "[RX] Data: " in line:
-                        # Extract just the payload part
                         parts = line.split("[RX] Data: ")
                         if len(parts) > 1:
                             payload_section = parts[1]
-                            # Stop at the "|" RSSI delimiter if present
                             payload = payload_section.split(" | ")[0]
                             station.process_lora_packet(payload)
-                    # OR it might be raw transparent data: "ID:T01|S:1"
-                    elif line.startswith("ID:") and "|S:" in line:
+
+                    elif line.startswith("ID:") and "|S1:" in line and "|S2:" in line:
                         station.process_lora_packet(line)
+
                 except Exception as e:
                     print(f"[SERIAL ERROR] {e}")
             time.sleep(0.1)
@@ -143,22 +171,12 @@ def main():
     dashboard_state = DashboardState()
     station = StationReceiver(dashboard_state)
 
-    # Start Flask in background thread
     app = create_flask_app(dashboard_state)
     web_thread = threading.Thread(target=flask_thread, args=(app,), daemon=True)
     web_thread.start()
-    
-    # Try to start serial listener in background
-    # Raspbian typically uses /dev/ttyACM0 or USB0 for Arduinos
-    port_candidates = ['/dev/ttyACM0', '/dev/ttyUSB0', 'COM3', 'COM4'] 
-    
-    # Basic port detection logic (or just try the first known one)
-    # For now, we launch the thread and it will try to connect once.
-    # To improve, you might want to iterate candidates, 
-    # but threading args is simpler if we just pick one likely one for now.
-    
-    # We'll just try connecting to the first available one in the list or let the user specify?
-    # Simple approach: Try valid ports in loop locally before threading
+
+    port_candidates = ['/dev/ttyACM0', '/dev/ttyUSB0', 'COM3', 'COM4']
+
     selected_port = None
     for port in port_candidates:
         try:
@@ -168,7 +186,7 @@ def main():
             break
         except:
             pass
-            
+
     if selected_port:
         t = threading.Thread(target=serial_listener, args=(station, selected_port), daemon=True)
         t.start()
@@ -177,45 +195,40 @@ def main():
 
     print("--- STATION PI DASHBOARD SIMULATOR ---")
     print("Commands:")
-    print("  ARRIVE <ID>  -> Simulate train arrival (e.g. 'ARRIVE T01')")
+    print("  ARRIVE <ID>  -> Simulate train arrival")
     print("  DEPART       -> Simulate train departure")
-    print("  DATA <MSG>   -> Simulate receiving LoRa packet (e.g. 'DATA ID:T01|S:1')")
+    print("  DATA <MSG>   -> Simulate receiving LoRa packet")
     print("  EXIT         -> Quit")
     print("----------------------------------------")
 
     try:
         while True:
             user_input = input("\nStation_Pi > ").strip().upper()
-            
+
             if user_input.startswith("ARRIVE"):
-                try:
-                    parts = user_input.split()
-                    if len(parts) > 1:
-                        train_id = parts[1]
-                        station.handle_arrival(train_id)
-                    else:
-                         print("[ERROR] Usage: ARRIVE <TrainID>")
-                except ValueError:
+                parts = user_input.split()
+                if len(parts) > 1:
+                    train_id = parts[1]
+                    station.handle_arrival(train_id)
+                else:
                     print("[ERROR] Usage: ARRIVE <TrainID>")
-                    
+
             elif user_input == "DEPART":
                 station.handle_departure()
-                
+
             elif user_input.startswith("DATA"):
-                # Simulate the LoRa radio receiving a string
-                # Remove "DATA " from the start to get the raw payload
                 if len(user_input) > 5:
                     raw_payload = user_input[5:]
                     station.process_lora_packet(raw_payload)
                 else:
-                    print("[ERROR] Usage: DATA ID:T01|S:1")
-                    
+                    print("[ERROR] Usage: DATA ID:T01|S1:1|S2:0")
+
             elif user_input == "EXIT":
                 print("Shutting down station...")
                 break
             else:
                 print("[ERROR] Unknown command.")
-                
+
     except KeyboardInterrupt:
         print("\nShutting down station...")
 

@@ -54,7 +54,7 @@ def compute_cabin_status(people_count, capacity):
 
     if people_count == 0:
         status = "EMPTY"
-    elif ratio < 0.25:
+    elif ratio < 0.4:
         status = "LOW"
     elif ratio < 0.6:
         status = "MEDIUM"
@@ -62,6 +62,17 @@ def compute_cabin_status(people_count, capacity):
         status = "HIGH"
     else:
         status = "FULL"
+
+    # if people_count == 0:
+    #     status = "EMPTY"
+    # elif ratio < 0.25:
+    #     status = "LOW"
+    # elif ratio < 0.6:
+    #     status = "MEDIUM"
+    # elif ratio < 0.9:
+    #     status = "HIGH"
+    # else:
+    #     status = "FULL"
 
     return ratio, status
 
@@ -181,7 +192,7 @@ def inference_loop(
             standing_count = max(0, full_frame_count - seated_count)
 
             # DENNIS - compute occupancy ratio and status based on people count and capacity
-            capacity = 40
+            capacity = 3
             cabin_people = full_frame_count
             occupancy_ratio, cabin_status = compute_cabin_status(
                 cabin_people,

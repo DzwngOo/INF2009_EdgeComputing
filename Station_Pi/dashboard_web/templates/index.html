@@ -28,7 +28,7 @@
                         <div class="seat G"></div>
                         <div class="seat G"></div>
 
-                        <!-- controlled seat -->
+                        <!-- controlled seat 1 -->
                         <div id="seat1" class="seat 
                             {% if data.seat1_final == 'TAKEN' %}
                                 R
@@ -41,7 +41,19 @@
                             {% endif %}
                         "></div>
 
-                        <div class="seat G"></div>
+                        <!-- controlled seat 2 -->
+                        <div id="seat2" class="seat 
+                            {% if data.seat2_final == 'TAKEN' %}
+                                R
+                            {% elif data.seat2_final == 'EMPTY' %}
+                                G
+                            {% elif data.seat2_final == 'OBJECT' %}
+                                O
+                            {% else %}
+                                X
+                            {% endif %}
+                        "></div>
+
                         <div class="seat G"></div>
                     </div>
 
@@ -91,7 +103,7 @@
                 return "UNKNOWN";
             }
 
-            if (occupancyRatio < 0.25) {
+            if (occupancyRatio < 0.4) {
                 return "SPARSE";
             } else if (occupancyRatio < 0.6) {
                 return "DENSE";
@@ -122,19 +134,24 @@
             }
         }
 
-        function updateSeatUI(seat1Final) {
-            const seat = document.getElementById("seat1");
+        function updateSingleSeatUI(seatId, seatFinal) {
+            const seat = document.getElementById(seatId);
             seat.classList.remove("G", "R", "O", "X");
 
-            if (seat1Final === "TAKEN") {
+            if (seatFinal === "TAKEN") {
                 seat.classList.add("R");
-            } else if (seat1Final === "EMPTY") {
+            } else if (seatFinal === "EMPTY") {
                 seat.classList.add("G");
-            } else if (seat1Final === "OBJECT") {
+            } else if (seatFinal === "OBJECT") {
                 seat.classList.add("O");
             } else {
                 seat.classList.add("X");
             }
+        }
+
+        function updateSeatUI(seat1Final, seat2Final) {
+            updateSingleSeatUI("seat1", seat1Final);
+            updateSingleSeatUI("seat2", seat2Final);
         }
 
         async function refreshDashboard() {
@@ -143,7 +160,7 @@
                 const data = await response.json();
 
                 updateDensityUI(data.occupancy_ratio);
-                updateSeatUI(data.seat1_final);
+                updateSeatUI(data.seat1_final, data.seat2_final);
             } catch (err) {
                 console.error("Failed to refresh dashboard:", err);
             }
@@ -151,7 +168,10 @@
 
         // Initial render from Flask-provided data
         updateDensityUI({{ data.occupancy_ratio if data.occupancy_ratio is not none else -1 }});
-        updateSeatUI("{{ data.seat1_final if data.seat1_final is not none else 'UNKNOWN' }}");
+        updateSeatUI(
+            "{{ data.seat1_final if data.seat1_final is not none else 'UNKNOWN' }}",
+            "{{ data.seat2_final if data.seat2_final is not none else 'UNKNOWN' }}"
+        );
 
         // Poll every 2 seconds
         setInterval(refreshDashboard, 2000);

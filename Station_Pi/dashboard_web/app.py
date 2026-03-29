@@ -6,13 +6,20 @@ class DashboardState:
         self.lock = threading.Lock()
         self.data = {
             "active_train": None,
-            "ultrasonic_status": "UNKNOWN",
+
+            "ultrasonic_status1": "UNKNOWN",
+            "ultrasonic_status2": "UNKNOWN",
+
             "capacity": None,
             "confidence_avg": None,
             "occupancy_ratio": None,
             "cabin_status": None,
+
             "seat1_cam": "UNKNOWN",
-            "seat1_final": None
+            "seat1_final": None,
+
+            "seat2_cam": "UNKNOWN",
+            "seat2_final": None
         }
 
     def update(self, **kwargs):
@@ -22,7 +29,8 @@ class DashboardState:
     def snapshot(self):
         with self.lock:
             return dict(self.data)
-        
+
+
 def create_flask_app(dashboard_state):
     app = Flask(__name__)
 
@@ -36,6 +44,7 @@ def create_flask_app(dashboard_state):
         return jsonify(dashboard_state.snapshot())
 
     return app
+
 
 def flask_thread(app):
     print("[SYSTEM] Flask dashboard starting on http://0.0.0.0:5000")
