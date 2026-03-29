@@ -81,9 +81,11 @@ void setup() {
     radio.setDio1Action(setFlag);
     
     // Initial Transmit
-    Serial.println("Init Success. Starting First TX...");
-    radio.startTransmit("Hello Station!");
-    digitalWrite(RAD_LED, HIGH); // ON during TX
+    // Serial.println("Init Success. Starting First TX...");
+    // radio.startTransmit("Hello Station!");
+    // digitalWrite(RAD_LED, HIGH); // ON during TX
+    // lastTxTime = millis();
+    Serial.println("Init Success. Waiting for Pi messages...");
     lastTxTime = millis();
     
   } else {
@@ -117,16 +119,17 @@ void loop() {
   //   Serial.println("TX Done");
   // }
   if (transmittedFlag) {
-    enableInterrupt = false;
-    transmittedFlag = false;
-    enableInterrupt = true;
+  enableInterrupt = false;
+  transmittedFlag = false;
+  enableInterrupt = true;
 
-    int state = radio.finishTransmit();
-    Serial.print("TX Done, finishTransmit state=");
-    Serial.println(state);
+  int state = radio.finishTransmit();
+  Serial.print("TX Done, finishTransmit state=");
+  Serial.println(state);
 
-    digitalWrite(RAD_LED, LOW);
-  }
+  txBusy = false;
+  digitalWrite(RAD_LED, LOW);
+}
 
   // 2. CHECK SERIAL INPUT (From Raspberry Pi)
   if (Serial.available()) {
@@ -141,11 +144,26 @@ void loop() {
       digitalWrite(RAD_LED, HIGH);
 
       // Start Non-Blocking Transmit
-      int state = radio.startTransmit(msg);
+      // int state = radio.startTransmit(msg);
 
-      if (state != RADIOLIB_ERR_NONE) {
-        Serial.print("TX Start Failed: ");
-        Serial.println(state);
+      // if (state != RADIOLIB_ERR_NONE) {
+      //   Serial.print("TX Start Failed: ");
+      //   Serial.println(state);
+      //   digitalWrite(RAD_LED, LOW);
+      // }
+      if (!txBusy) {
+        int state = radio.startTransmit(msg);
+
+        if (state == RADIOLIB_ERR_NONE) {
+          txBusy = true;
+          lastTxTime = millis();
+        } else {
+          Serial.print("TX Start Failed: ");
+          Serial.println(state);
+          digitalWrite(RAD_LED, LOW);
+        }
+      } else {
+        Serial.println("TX BUSY - dropping incoming serial message");
         digitalWrite(RAD_LED, LOW);
       }
       
@@ -156,24 +174,24 @@ void loop() {
 
   // 3. HEARTBEAT (Optional: Keep sending pings if idle for too long)
   // Keeps the connection alive if the Pi stops sending data.
-  if (millis() - lastTxTime > 10000) { // 10 seconds timeout
-    lastTxTime = millis();
+  // if (millis() - lastTxTime > 10000) { // 10 seconds timeout
+  //   lastTxTime = millis();
     
-    // Payload
-    String msg = "Heartbeat " + String(txCount++);
-    Serial.println("Starting Heartbeat TX: " + msg);
+  //   // Payload
+  //   String msg = "Heartbeat " + String(txCount++);
+  //   Serial.println("Starting Heartbeat TX: " + msg);
 
-    // Turn ON LED -> Starting TX
-    digitalWrite(RAD_LED, HIGH);
+  //   // Turn ON LED -> Starting TX
+  //   digitalWrite(RAD_LED, HIGH);
     
-    // Start Non-Blocking Transmit
-    int state = radio.startTransmit(msg);
+  //   // Start Non-Blocking Transmit
+  //   int state = radio.startTransmit(msg);
     
-    // Handle Immediate Start Failures
-    if (state != RADIOLIB_ERR_NONE) {
-      Serial.print("TX Start Failed: ");
-      Serial.println(state);
-      digitalWrite(RAD_LED, LOW); 
-    }
-  }
+  //   // Handle Immediate Start Failures
+  //   if (state != RADIOLIB_ERR_NONE) {
+  //     Serial.print("TX Start Failed: ");
+  //     Serial.println(state);
+  //     digitalWrite(RAD_LED, LOW); 
+  //   }
+  // }
 }
