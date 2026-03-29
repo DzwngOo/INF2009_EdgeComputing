@@ -8,8 +8,8 @@ RETRY_BATCH_SIZE = 10
 def connect_lora():
     """Try to connect to LoRa module on common serial ports."""
     try:
-        # port_candidates = ['/dev/ttyACM0', '/dev/ttyUSB0', '/dev/ttyACM1', '/dev/ttyUSB1']
-        port_candidates = ['/dev/ttyACM0', '/dev/ttyUSB0', '/dev/ttyACM1', '/dev/ttyUSB1', '/dev/ttyAMA10']
+        port_candidates = ['/dev/ttyACM0', '/dev/ttyUSB0', '/dev/ttyACM1', '/dev/ttyUSB1']
+        # port_candidates = ['/dev/ttyACM0', '/dev/ttyUSB0', '/dev/ttyACM1', '/dev/ttyUSB1', '/dev/ttyAMA10']
         for port in port_candidates:
             try:
                 ser = serial.Serial(port, 115200, timeout=1)
