@@ -137,7 +137,7 @@ def main(train_id="T01"):
                 except Exception as e:
                     print(f"   [ERROR] LoRa Write Failed: {e}")
 
-            time.sleep(20)
+            time.sleep(5)
             
     except KeyboardInterrupt:
         print("\nStopping Main System...")

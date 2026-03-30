@@ -1,0 +1,74 @@
+#####################################################################################################################################
+
+Station_PI
+
+ Performance counter stats for process id '1941':
+
+              4.89 msec task-clock                       #    0.000 CPUs utilized             
+           6620361      cycles                           #    1.355 GHz                       
+           9567935      instructions                     #    1.45  insn per cycle            
+             66081      cache-misses                                                          
+               164      context-switches                 #   33.555 K/sec                     
+                 0      cpu-migrations                   #    0.000 /sec                      
+                 0      page-faults                      #    0.000 /sec                      
+
+      10.010058851 seconds time elapsed
+
+Cabin_PI
+
+ Performance counter stats for process id '1932':
+
+           5251.89 msec task-clock                       #    0.525 CPUs utilized             
+       12476823049      cycles                           #    2.376 GHz                       
+       18761610235      instructions                     #    1.50  insn per cycle            
+          31386063      cache-misses                                                          
+              2929      context-switches                 #  557.704 /sec                      
+                 3      cpu-migrations                   #    0.571 /sec                      
+                 0      page-faults                      #    0.000 /sec                      
+
+      10.010080019 seconds time elapsed
+
+Camera_Pi
+
+ Performance counter stats for process id '1920':
+
+          17011.16 msec task-clock                       #    1.701 CPUs utilized             
+       40527832368      cycles                           #    2.382 GHz                       
+       61836162149      instructions                     #    1.53  insn per cycle            
+         359425932      cache-misses                                                          
+              9284      context-switches                 #  545.759 /sec                      
+               175      cpu-migrations                   #   10.287 /sec                      
+               401      page-faults                      #   23.573 /sec                      
+
+      10.003168418 seconds time elapsed
+
+Commands for perf:
+
+PID=$(pgrep -n -f "python3 cabin_lora.py")
+sudo perf stat -p $PID --timeout 10000 \
+  -e task-clock,cycles,instructions,cache-misses,context-switches,cpu-migrations,page-faults
+
+PID=$(pgrep -n -f "python3 main.py")
+sudo perf stat -p $PID --timeout 10000 \
+  -e task-clock,cycles,instructions,cache-misses,context-switches,cpu-migrations,page-faults \
+  2> perf_camera.txt
+
+#####################################################################################################################################
+
+Actual End-to-End Parser Summary
+============================================================
+Merged msg_ids: 1366
+Camera→Dashboard E2E mean/p99: 567.1 / 759.9 ms
+Cabin sensor→Dashboard E2E mean/p99: 160.7 / 209.0 ms
+
+Formulae used:
+  camera->dashboard: (station_dashboard_done_ns - cam_capture_start_ns) / 1e6
+  cabin->dashboard:  (station_dashboard_done_ns - cabin_ultra_poll_done_ns) / 1e6
+Note: cross-host subtraction assumes clock sync (chrony/NTP) and uses epoch ns.
+
+Commands for E2E latency p99/mean:
+
+scp SOURCE_FILE username@DESTINATION_PI_IP:DESTINATION_PATH
+scp /home/stationpi/Desktop/INF2009_EdgeComputing/Station_Pi/station.log ultrasonicpi@172.20.10.8:/home/ultrasonicpi/Desktop/INF2009_EdgeComputing/Ultrasonic_Pi
+
+#####################################################################################################################################

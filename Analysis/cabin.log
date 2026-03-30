@@ -1,0 +1,20 @@
+                    [SYSTEM] Connected to LoRa module on /dev/ttyACM0
+SonarSensor: Monitoring started on TRIG=23, ECHO=24
+SonarSensor: Monitoring started on TRIG=17, ECHO=27
+Main System Started for T01. Sensors run in background.
+==========
+
+[20s Cycle] Transmitting to Station: ID:T01|S1:0|S2:0
+   L Seat 1 Raw Distance: 0.00cm
+   L Seat 1 Interpretation: EMPTY (<20cm is TAKEN)
+   L Seat 2 Raw Distance: 0.00cm
+   L Seat 2 Interpretation: EMPTY (<20cm is TAKEN)
+ID:T01|S1:0|S2:0
+Connected with result code 0
+==========
+   L Capacity: 3
+   L Confidence Average: 0.0
+   L Occupancy Ratio: 0.0
+   L Cabin Status: EMPTY
+
+[20s Cycle] Transmitting to Station: ID:T01|S1:0|S2:0|CAP:3|CONF:0.000|OCC:0.00>

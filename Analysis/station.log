@@ -1,0 +1,19 @@
+[RAW] '.'
+[RAW] '[RX] Data: ID:T01|S1:0|S2:0|CAP:3|CONF:0.000|OCC:0.000|CAB:EMPTY|SEAT1_C>
+ID:T01|S1:0|S2:0|CAP:3|CONF:0.000|OCC:0.000|CAB:EMPTY|SEAT1_CAM:0|SEAT1_FINAL:E>
+
+[PARSED DATA]
+   L Train ID: T01
+   L Ultrasonic Seat 1: EMPTY
+   L Ultrasonic Seat 2: EMPTY
+   L Capacity: 3
+   L Confidence Average: 0.000
+   L Occupancy Ratio: 0.000
+   L Cabin Status: EMPTY
+   L Camera Seat 1: EMPTY
+   L Final Seat 1: EMPTY
+   L Camera Seat 2: EMPTY
+   L Final Seat 2: EMPTY
+[E2E_LOG][STATION] msg_id=cam-1774791602319174945-1303 station_lora_rx_ns=17747>
+[RAW] '.'
+[RAW] '.'
