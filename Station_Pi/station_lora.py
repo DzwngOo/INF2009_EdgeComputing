@@ -100,9 +100,6 @@ class StationReceiver:
             received_status1 = int(fields['S1'])
             received_status2 = int(fields['S2'])
 
-            ultrasonic_text1 = "TAKEN" if received_status1 == 1 else "EMPTY"
-            ultrasonic_text2 = "TAKEN" if received_status2 == 1 else "EMPTY"
-
             ultrasonic_health1 = fields.get('UH1', "UNKNOWN")
             ultrasonic_health2 = fields.get('UH2', "UNKNOWN")
 
@@ -130,18 +127,58 @@ class StationReceiver:
             seat1_cam = int(fields['SEAT1_CAM']) if 'SEAT1_CAM' in fields else None
             seat2_cam = int(fields['SEAT2_CAM']) if 'SEAT2_CAM' in fields else None
 
-            # Fallback logic:
-            # if camera is down and SEAT*_FINAL is missing, use ultrasonic status
-            seat1_final = fields.get('SEAT1_FINAL', ultrasonic_text1)
-            seat2_final = fields.get('SEAT2_FINAL', ultrasonic_text2)
-
             seat1_cam_text = "UNKNOWN" if seat1_cam is None else ("TAKEN" if seat1_cam == 1 else "EMPTY")
             seat2_cam_text = "UNKNOWN" if seat2_cam is None else ("TAKEN" if seat2_cam == 1 else "EMPTY")
 
+            # Raw ultrasonic interpretation from S1/S2
+            raw_ultrasonic_text1 = "TAKEN" if received_status1 == 1 else "EMPTY"
+            raw_ultrasonic_text2 = "TAKEN" if received_status2 == 1 else "EMPTY"
+
+            # Display FAILED if sensor health says so
+            ultrasonic_text1 = "FAILED" if ultrasonic_health1 == "FAILED" else raw_ultrasonic_text1
+            ultrasonic_text2 = "FAILED" if ultrasonic_health2 == "FAILED" else raw_ultrasonic_text2
+
             camera_status = "ONLINE" if camera_payload_present else "OFFLINE"
+
+            incoming_seat1_final = fields.get('SEAT1_FINAL')
+            incoming_seat2_final = fields.get('SEAT2_FINAL')
+
+            def resolve_final_seat(ultrasonic_health, camera_text, raw_ultrasonic_text, incoming_final):
+                # Ultrasonic failed -> use camera if available
+                if ultrasonic_health == "FAILED":
+                    if camera_text != "UNKNOWN":
+                        return camera_text
+                    return "UNKNOWN"
+
+                # Normal case -> use transmitted final if present
+                if incoming_final is not None:
+                    return incoming_final
+
+                # Camera missing -> fall back to ultrasonic
+                return raw_ultrasonic_text
+
+            seat1_final = resolve_final_seat(
+                ultrasonic_health1,
+                seat1_cam_text,
+                raw_ultrasonic_text1,
+                incoming_seat1_final
+            )
+
+            seat2_final = resolve_final_seat(
+                ultrasonic_health2,
+                seat2_cam_text,
+                raw_ultrasonic_text2,
+                incoming_seat2_final
+            )
 
             if not camera_payload_present:
                 print("[MODE] Ultrasonic-only fallback packet received (camera offline).")
+
+            if ultrasonic_health1 == "FAILED" and seat1_cam_text != "UNKNOWN":
+                print("[MODE] Seat 1 using CAMERA fallback because ultrasonic failed.")
+
+            if ultrasonic_health2 == "FAILED" and seat2_cam_text != "UNKNOWN":
+                print("[MODE] Seat 2 using CAMERA fallback because ultrasonic failed.")
 
             print(f"\n[PARSED DATA]")
             print(f"   L Train ID: {received_id}")
