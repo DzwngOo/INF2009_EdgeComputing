@@ -7,6 +7,7 @@ class StationReceiver:
         self.seat_status1 = None
         self.seat_status2 = None
         self.dashboard_state = dashboard_state
+        self.last_packet_time = None
 
     def handle_arrival(self, train_id):
         """Simulate a train arriving and locking onto its signal."""
@@ -27,7 +28,11 @@ class StationReceiver:
             seat1_cam="UNKNOWN",
             seat1_final=None,
             seat2_cam="UNKNOWN",
-            seat2_final=None
+            seat2_final=None,
+            camera_status="UNKNOWN",
+            ultrasonic_health1="UNKNOWN",
+            ultrasonic_health2="UNKNOWN",
+            cabin_link_status="WAITING"
         )
 
     def handle_departure(self):
@@ -50,7 +55,11 @@ class StationReceiver:
                 seat1_cam="UNKNOWN",
                 seat1_final=None,
                 seat2_cam="UNKNOWN",
-                seat2_final=None
+                seat2_final=None,
+                camera_status="UNKNOWN",
+                ultrasonic_health1="UNKNOWN",
+                ultrasonic_health2="UNKNOWN",
+                cabin_link_status="INACTIVE"
             )
         else:
             print("[ERROR] No train is currently at the platform.")
@@ -89,6 +98,8 @@ class StationReceiver:
 
             seat2_cam = int(fields['SEAT2_CAM']) if 'SEAT2_CAM' in fields else None
             seat2_final = fields.get('SEAT2_FINAL')
+            ultrasonic_health1 = fields.get('UH1', "UNKNOWN")
+            ultrasonic_health2 = fields.get('UH2', "UNKNOWN")
             msg_id = fields.get('MID')
             cam_capture_start_ns = int(fields['CAM_CAP_NS']) if 'CAM_CAP_NS' in fields else None
             cam_capture_start_perf_ns = int(fields['CAM_CAP_PNS']) if 'CAM_CAP_PNS' in fields else None
@@ -100,6 +111,7 @@ class StationReceiver:
 
             seat1_cam_text = "UNKNOWN" if seat1_cam is None else ("TAKEN" if seat1_cam == 1 else "EMPTY")
             seat2_cam_text = "UNKNOWN" if seat2_cam is None else ("TAKEN" if seat2_cam == 1 else "EMPTY")
+            camera_status = "ONLINE" if (capacity is not None and confidence_avg is not None) else "OFFLINE"
 
             print(f"\n[PARSED DATA]")
             print(f"   L Train ID: {received_id}")
@@ -135,8 +147,13 @@ class StationReceiver:
                     seat1_cam=seat1_cam_text,
                     seat1_final=seat1_final,
                     seat2_cam=seat2_cam_text,
-                    seat2_final=seat2_final
+                    seat2_final=seat2_final,
+                    camera_status=camera_status,
+                    ultrasonic_health1=ultrasonic_health1,
+                    ultrasonic_health2=ultrasonic_health2,
+                    cabin_link_status="ONLINE"
                 )
+                self.last_packet_time = time.time()
 
                 station_dashboard_done_ns = time.time_ns()
                 station_dashboard_done_perf_ns = time.perf_counter_ns()
@@ -160,6 +177,22 @@ class StationReceiver:
                 pass
             else:
                 print(f"[ERROR] Malformed packet received: {raw_data}")
+
+    def refresh_link_health(self):
+        if not self.active_train:
+            return
+        now = time.time()
+        if self.last_packet_time is None:
+            self.dashboard_state.update(cabin_link_status="WAITING")
+            return
+        lag = now - self.last_packet_time
+        if lag > 60:
+            status = "OFFLINE"
+        elif lag > 30:
+            status = "DEGRADED"
+        else:
+            status = "ONLINE"
+        self.dashboard_state.update(cabin_link_status=status)
 
 def serial_listener(station, port_name):
     """Background thread to listen to real LoRa hardware"""
@@ -189,6 +222,12 @@ def serial_listener(station, port_name):
         print(f"[WARNING] Could not open {port_name}. Running in Simulation-Only mode.")
 
 
+def link_health_watchdog(station):
+    while True:
+        station.refresh_link_health()
+        time.sleep(1.0)
+
+
 def main():
     dashboard_state = DashboardState()
     station = StationReceiver(dashboard_state)
@@ -214,6 +253,9 @@ def main():
         t.start()
     else:
         print("[WARNING] No Serial Port found. Input commands manually.")
+
+    t_health = threading.Thread(target=link_health_watchdog, args=(station,), daemon=True)
+    t_health.start()
 
     print("--- STATION PI DASHBOARD SIMULATOR ---")
     print("Commands:")

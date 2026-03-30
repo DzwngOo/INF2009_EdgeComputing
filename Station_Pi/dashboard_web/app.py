@@ -19,7 +19,12 @@ class DashboardState:
             "seat1_final": None,
 
             "seat2_cam": "UNKNOWN",
-            "seat2_final": None
+            "seat2_final": None,
+
+            "camera_status": "UNKNOWN",
+            "ultrasonic_health1": "UNKNOWN",
+            "ultrasonic_health2": "UNKNOWN",
+            "cabin_link_status": "UNKNOWN"
         }
 
     def update(self, **kwargs):

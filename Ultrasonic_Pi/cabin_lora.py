@@ -32,7 +32,7 @@ def main(train_id="T01"):
         print(f"[ERROR] Serial setup failed: {e}")
 
     # Create a Queue to hold the data from MQTT
-    mqtt_queue = queue.Queue()
+    mqtt_queue = queue.Queue(maxsize=20)
 
     try:
         sensor1.start()
@@ -45,9 +45,19 @@ def main(train_id="T01"):
         while True:
             seat_status1 = sensor1.get_latest_status()
             distance1 = sensor1.get_latest_distance()
+            sensor_health1 = sensor1.get_health_status()
 
             seat_status2 = sensor2.get_latest_status()
             distance2 = sensor2.get_latest_distance()
+            sensor_health2 = sensor2.get_health_status()
+
+            if sensor_health1 != "OK" and sensor_health2 != "OK":
+                print("[WARNING] Both ultrasonic sensors degraded/failed. Seat status may be stale.")
+            elif sensor_health1 != "OK" or sensor_health2 != "OK":
+                print(
+                    f"[WARNING] Ultrasonic sensor health issue: "
+                    f"seat1={sensor_health1}, seat2={sensor_health2}"
+                )
 
             status_desc1 = "TAKEN" if seat_status1 == 1 else "EMPTY"
             status_desc2 = "TAKEN" if seat_status2 == 1 else "EMPTY"
@@ -84,6 +94,8 @@ def main(train_id="T01"):
                     f"|SEAT1_FINAL:{final_seat1_status}"
                     f"|SEAT2_CAM:{int(seat2_cam)}"
                     f"|SEAT2_FINAL:{final_seat2_status}"
+                    f"|UH1:{sensor_health1}"
+                    f"|UH2:{sensor_health2}"
                 )
 
                 msg_id = message_data.get("msg_id")
@@ -120,6 +132,8 @@ def main(train_id="T01"):
                     f"ID:{train_id}"
                     f"|S1:{seat_status1}"
                     f"|S2:{seat_status2}"
+                    f"|UH1:{sensor_health1}"
+                    f"|UH2:{sensor_health2}"
                 )
 
                 print(f"\n[20s Cycle] Transmitting to Station: {msg}")
@@ -176,6 +190,7 @@ def main(train_id="T01"):
     finally:
         # Always clean up the sensor thread on exit
         sensor1.stop()
+        sensor2.stop()
         if lora_serial:
             lora_serial.close()
 

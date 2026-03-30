@@ -10,6 +10,8 @@ class SonarSensor:
 
         self.current_status = 0   # 0: Vacant, 1: Occupied
         self.current_distance = 0.0
+        self.invalid_read_streak = 0
+        self.health_status = "UNKNOWN"
         self.running = False
         self._thread = None
 
@@ -70,10 +72,17 @@ class SonarSensor:
                     new_status = 1 if dist < self.occupied_threshold_cm else 0
                     self.current_status = new_status
                     self.current_distance = dist
+                    self.invalid_read_streak = 0
+                    self.health_status = "OK"
+                else:
+                    self.invalid_read_streak += 1
+                    self.health_status = "FAILED" if self.invalid_read_streak >= 15 else "DEGRADED"
 
                 time.sleep(0.2)
             except Exception as e:
                 print(f"Sonar Error on TRIG={self.trig_pin}, ECHO={self.echo_pin}: {e}")
+                self.invalid_read_streak += 1
+                self.health_status = "FAILED" if self.invalid_read_streak >= 15 else "DEGRADED"
                 time.sleep(1)
 
     def start(self):
@@ -94,6 +103,9 @@ class SonarSensor:
 
     def get_latest_distance(self):
         return self.current_distance
+
+    def get_health_status(self):
+        return self.health_status
 
     @staticmethod
     def cleanup_gpio():

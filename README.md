@@ -274,6 +274,52 @@ Important:
 - `time.perf_counter_ns()` is still logged for per-host stage analysis but should not be
   directly subtracted across machines without offset compensation.
 
+## 3.5 Runtime capping strategy (what is enforced at runtime)
+
+This section defines the **live runtime limits** currently enforced by code.
+
+- Camera inference pacing:
+  - `Camera_Pi/config.py` sets `MAX_FPS = 10.0`.
+  - `Camera_Pi/inference_worker.py` enforces pacing using `time.perf_counter()` sleep scheduling.
+  - This is the active runtime throttle for CPU load.
+- Camera publish queue cap:
+  - `Camera_Pi/main.py` uses `PUBLISH_Q = queue.Queue(maxsize=50)`.
+  - On overflow, `inference_worker.py` drops the **oldest** item and inserts the newest result (`drop_old_on_full=True`), so memory remains bounded.
+- Camera display queue cap:
+  - `DISPLAY_Q = queue.Queue(maxsize=1)`.
+  - If full, new debug frames are skipped (drop newest for UI path), keeping inference/publish path prioritized.
+- Cabin MQTT ingest queue cap:
+  - `Ultrasonic_Pi/cabin_lora.py` uses `mqtt_queue = queue.Queue(maxsize=20)`.
+  - `Ultrasonic_Pi/mqtt.py` uses drop-oldest-on-full behavior to keep latest data and bound memory.
+- LoRa TX backlog behavior:
+  - Cabin sends one payload per 20-second cycle and flushes MQTT queue to latest value before send.
+  - There is no unbounded TX backlog queue in Python cabin logic.
+
+Current scope notes:
+- There is **no hard OS-level CPU quota** (e.g. `cpulimit`/cgroup quota) enforced by this repo at runtime.
+- There is **no process RSS hard memory cap** enforced by this repo at runtime.
+- If required for deployment policy, apply host/container cgroup limits in systemd/Docker.
+
+## 3.6 Fallback and failure behavior matrix
+
+- Camera failure (disconnect / sustained no frames):
+  - Inference loop exits when `cap.read()` fails.
+  - Cabin continues transmitting ultrasonic status (`S1/S2`) every cycle.
+  - Station marks camera as `OFFLINE` when camera-derived fields (`CAP`/`CONF`) are absent, while still showing ultrasonic data.
+- Ultrasonic sensor failure:
+  - Each sensor now publishes health state (`UH1`, `UH2`) as `OK`, `DEGRADED`, or `FAILED`.
+  - Health is based on consecutive invalid reads; invalid-streak escalation is explicit in `Ultrasonic_Pi/ultrasonic.py`.
+  - If both sensors degrade/fail, Cabin prints warning that seat status may be stale.
+- Cabin Pi failure / publisher stall:
+  - Station tracks last packet time and sets `cabin_link_status`:
+    - `ONLINE` (fresh packets),
+    - `DEGRADED` (>30 s without packet),
+    - `OFFLINE` (>60 s without packet),
+    - `WAITING` (train arrived but no packet yet).
+- Station Pi failure:
+  - Current behavior is best-effort send from Cabin; if Station is down, packets are not durably buffered for later replay in this Python path.
+  - For guaranteed replay, add explicit durable store-and-forward (not currently implemented).
+
 # 2. Station Pi
 
 ## 2.1 Setup

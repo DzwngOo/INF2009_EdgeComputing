@@ -1,4 +1,5 @@
 import json, threading, sys, os
+import queue
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import Camera_Pi.config as config  # Now you can import from Camera_Pi
 import paho.mqtt.client as mqtt
@@ -28,6 +29,16 @@ class MqttSubscriberThread(threading.Thread):
         try:
             data = json.loads(msg.payload.decode())
             # print(f"Received JSON data: {data}")
-            self.mqtt_queue.put(data)
+            try:
+                self.mqtt_queue.put_nowait(data)
+            except queue.Full:
+                try:
+                    _ = self.mqtt_queue.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    self.mqtt_queue.put_nowait(data)
+                except queue.Full:
+                    pass
         except json.JSONDecodeError:
             print("Failed to decode JSON from message.")

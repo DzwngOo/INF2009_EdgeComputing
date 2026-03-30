@@ -95,6 +95,13 @@
             </div>
         </div>
 
+        <div class="card">
+            <div class="density-title">System Health</div>
+            <div id="camera-status">Camera: UNKNOWN</div>
+            <div id="cabin-link-status">Cabin Link: UNKNOWN</div>
+            <div id="ultrasonic-health">Ultrasonic: UNKNOWN / UNKNOWN</div>
+        </div>
+
     </div>
 
     <script>
@@ -154,6 +161,13 @@
             updateSingleSeatUI("seat2", seat2Final);
         }
 
+        function updateHealthUI(data) {
+            document.getElementById("camera-status").textContent = `Camera: ${data.camera_status ?? "UNKNOWN"}`;
+            document.getElementById("cabin-link-status").textContent = `Cabin Link: ${data.cabin_link_status ?? "UNKNOWN"}`;
+            document.getElementById("ultrasonic-health").textContent =
+                `Ultrasonic: ${data.ultrasonic_health1 ?? "UNKNOWN"} / ${data.ultrasonic_health2 ?? "UNKNOWN"}`;
+        }
+
         async function refreshDashboard() {
             try {
                 const response = await fetch("/api/data");
@@ -161,6 +175,7 @@
 
                 updateDensityUI(data.occupancy_ratio);
                 updateSeatUI(data.seat1_final, data.seat2_final);
+                updateHealthUI(data);
             } catch (err) {
                 console.error("Failed to refresh dashboard:", err);
             }
@@ -172,6 +187,12 @@
             "{{ data.seat1_final if data.seat1_final is not none else 'UNKNOWN' }}",
             "{{ data.seat2_final if data.seat2_final is not none else 'UNKNOWN' }}"
         );
+        updateHealthUI({
+            camera_status: "{{ data.camera_status if data.camera_status is not none else 'UNKNOWN' }}",
+            cabin_link_status: "{{ data.cabin_link_status if data.cabin_link_status is not none else 'UNKNOWN' }}",
+            ultrasonic_health1: "{{ data.ultrasonic_health1 if data.ultrasonic_health1 is not none else 'UNKNOWN' }}",
+            ultrasonic_health2: "{{ data.ultrasonic_health2 if data.ultrasonic_health2 is not none else 'UNKNOWN' }}",
+        });
 
         // Poll every 2 seconds
         setInterval(refreshDashboard, 2000);
