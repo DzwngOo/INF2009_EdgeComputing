@@ -146,11 +146,10 @@ class StationReceiver:
             else:
                 print(f"[ERROR] Malformed packet received: {raw_data}")
 
-def serial_listener(station, port_name):
+def serial_listener(station, ser):
     """Background thread to listen to real LoRa hardware"""
     try:
-        ser = serial.Serial(port_name, 115200, timeout=1)
-        print(f"[SYSTEM] Connected to LoRa Hardware on {port_name}")
+        print(f"[SYSTEM] Listening on LoRa serial {ser.port}")
         while True:
             if ser.in_waiting:
                 try:
@@ -171,7 +170,7 @@ def serial_listener(station, port_name):
                     print(f"[SERIAL ERROR] {e}")
             time.sleep(0.1)
     except serial.SerialException:
-        print(f"[WARNING] Could not open {port_name}. Running in Simulation-Only mode.")
+        print("[WARNING] Serial listener stopped.")
 
 def send_ack(ser, train_id, msg_id):
     """Send ACK back to cabin for a successfully processed packet."""
@@ -185,6 +184,18 @@ def send_ack(ser, train_id, msg_id):
         print(f"[ACK SENT] {ack_msg}")
     except Exception as e:
         print(f"[ACK ERROR] Failed to send ACK: {e}")
+    
+def send_raw_lora(ser, raw_text):
+    """Send any raw string out through the station LoRa serial link."""
+    if ser is None:
+        print("[SEND ERROR] No serial connection.")
+        return
+
+    try:
+        ser.write((raw_text + '\n').encode('utf-8'))
+        print(f"[RAW SENT] {raw_text}")
+    except Exception as e:
+        print(f"[SEND ERROR] {e}")
 
 def main():
     dashboard_state = DashboardState()
@@ -206,9 +217,16 @@ def main():
         except:
             pass
 
+    station_ser = None
+
     if selected_port:
-        t = threading.Thread(target=serial_listener, args=(station, selected_port), daemon=True)
-        t.start()
+        try:
+            station_ser = serial.Serial(selected_port, 115200, timeout=1)
+            print(f"[SYSTEM] Station serial ready on {selected_port}")
+            t = threading.Thread(target=serial_listener, args=(station, station_ser), daemon=True)
+            t.start()
+        except Exception as e:
+            print(f"[WARNING] Could not open {selected_port}: {e}")
     else:
         print("[WARNING] No Serial Port found. Input commands manually.")
 
@@ -245,8 +263,30 @@ def main():
             elif user_input == "EXIT":
                 print("Shutting down station...")
                 break
+
+            elif user_input.startswith("SEND "):
+                raw_msg = user_input[5:]
+                if station_ser:
+                    send_raw_lora(station_ser, raw_msg)
+                else:
+                    print("[ERROR] No station serial available.")
+
+            elif user_input.startswith("TESTACK"):
+                parts = user_input.split()
+                if len(parts) == 3:
+                    train_id = parts[1]
+                    msg_id = parts[2]
+                    if station_ser:
+                        send_raw_lora(station_ser, f"ACK|ID:{train_id}|MSGID:{msg_id}")
+                    else:
+                        print("[ERROR] No station serial available.")
+                else:
+                    print("[ERROR] Usage: TESTACK <TrainID> <MSGID>")
+
             else:
                 print("[ERROR] Unknown command.")
+
+            
 
     except KeyboardInterrupt:
         print("\nShutting down station...")

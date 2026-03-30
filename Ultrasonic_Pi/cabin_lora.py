@@ -51,7 +51,7 @@ def send_lora_message(lora_serial, payload):
         print(f"[ERROR] LoRa Write Failed: {e}")
         return False
     
-def wait_for_ack(lora_serial, train_id, msg_id, timeout=3.0):
+def wait_for_ack(lora_serial, train_id, msg_id, timeout=5.0):
     """Wait for ACK from station, accepting wrapped LoRa module output."""
     if not lora_serial:
         return False
