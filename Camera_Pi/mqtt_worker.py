@@ -17,7 +17,7 @@ def mqtt_publisher_loop(
     retain: bool = False,
 ):
     # MQTT client setup
-    client = mqtt.Client(client_id)
+    client = mqtt.Client(client_id=client_id)
     connected = threading.Event()
 
     def on_connect(_client, _userdata, _flags, rc):
