@@ -248,6 +248,7 @@ def inference_loop(
 
     tracker = _LatencyTracker(report_every=latency_report_every)
     msg_seq = 0
+    camera_offline = False
 
     try:
         while not stop_evt.is_set():
@@ -267,7 +268,25 @@ def inference_loop(
             t0 = time.perf_counter()
             ok, frame = cap.read()
             if not ok:
-                break
+                if not camera_offline:
+                    print("[CAMERA] Video source unavailable. Waiting for reconnect...")
+                    camera_offline = True
+                try:
+                    cap.release()
+                except Exception:
+                    pass
+
+                while not stop_evt.is_set():
+                    try:
+                        cap = open_capture(source)
+                        print("[CAMERA] Video source reconnected. Resuming inference.")
+                        camera_offline = False
+                        # reset pacing baseline to avoid burst after long disconnect
+                        next_t = time.perf_counter()
+                        break
+                    except Exception:
+                        time.sleep(1.0)
+                continue
             tracker.record("capture_preprocess", (time.perf_counter() - t0) * 1000.0)
 
             roi_presence = {name: False for name in ROIS}   # start every ROI as False

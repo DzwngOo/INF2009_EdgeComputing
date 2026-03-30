@@ -373,6 +373,9 @@ sudo systemctl restart mosquitto   # Restart Mosquitto to apply changes
 ## 2.3 Testing reconnection and SQLite cache fallback
 
 - `test_network_resilience.sh` tests the **MQTT network path** (tc-netem delay/loss on broker link). It is useful for Camera↔Broker resilience, but it does **not** directly test Cabin LoRa serial disconnection.
+- For Camera USB unplug/replug tests, watch Camera Pi logs for:
+  - `[CAMERA] Video source unavailable. Waiting for reconnect...`
+  - `[CAMERA] Video source reconnected. Resuming inference.`
 - To test Cabin SQLite store-and-forward specifically:
   1. Start Cabin Pi (`Ultrasonic_Pi/cabin_lora.py`) and Station receiver.
   2. Simulate LoRa outage by unplugging the Cabin LoRa USB serial (or disabling the serial device).
