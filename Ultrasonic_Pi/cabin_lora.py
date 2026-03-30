@@ -8,6 +8,7 @@ import time, serial, queue
 CACHE_DB_PATH = os.path.join(os.path.dirname(__file__), "telemetry_cache.db")
 LORA_PORT_CANDIDATES = ['/dev/ttyACM0', '/dev/ttyUSB0', '/dev/ttyACM1', '/dev/ttyUSB1']
 CACHE_BURST_LIMIT = 50
+TELEMETRY_CYCLE_INTERVAL_S = 20
 
 class TelemetryCache:
     def __init__(self, db_path: str = CACHE_DB_PATH):
@@ -257,7 +258,7 @@ def main(train_id="T01"):
                 cache.enqueue(msg)
                 print(f"[CACHE] Stored packet locally (pending={cache.size()}).")
 
-            time.sleep(20)
+            time.sleep(TELEMETRY_CYCLE_INTERVAL_S)
             
     except KeyboardInterrupt:
         print("\nStopping Main System...")
