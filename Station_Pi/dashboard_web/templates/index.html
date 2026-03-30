@@ -11,7 +11,13 @@
     <div class="dashboard-container">
         
         <div class="card screen-card">
-            <h2 class="screen-text">SCREEN</h2>
+            <h2 id="active-train-label" class="screen-text">
+                {% if data.active_train %}
+                    TRAIN {{ data.active_train }}
+                {% else %}
+                    NO TRAIN
+                {% endif %}
+            </h2>
         </div>
 
         <div class="card">
@@ -168,11 +174,17 @@
                 `Ultrasonic: ${data.ultrasonic_health1 ?? "UNKNOWN"} / ${data.ultrasonic_health2 ?? "UNKNOWN"}`;
         }
 
+        function updateActiveTrainUI(activeTrain) {
+            const el = document.getElementById("active-train-label");
+            el.textContent = activeTrain ? `TRAIN ${activeTrain}` : "NO TRAIN";
+        }
+
         async function refreshDashboard() {
             try {
                 const response = await fetch("/api/data");
                 const data = await response.json();
 
+                updateActiveTrainUI(data.active_train);
                 updateDensityUI(data.occupancy_ratio);
                 updateSeatUI(data.seat1_final, data.seat2_final);
                 updateHealthUI(data);
@@ -182,6 +194,7 @@
         }
 
         // Initial render from Flask-provided data
+        updateActiveTrainUI("{{ data.active_train if data.active_train is not none else '' }}");
         updateDensityUI({{ data.occupancy_ratio if data.occupancy_ratio is not none else -1 }});
         updateSeatUI(
             "{{ data.seat1_final if data.seat1_final is not none else 'UNKNOWN' }}",

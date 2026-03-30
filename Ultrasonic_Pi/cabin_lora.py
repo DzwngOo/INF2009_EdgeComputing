@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import time, serial, queue
+import threading
 
 # This file represents your "Main Application Logic"
 # It runs on the main thread and imports the sensor driver
@@ -9,6 +10,50 @@ CACHE_DB_PATH = os.path.join(os.path.dirname(__file__), "telemetry_cache.db")
 LORA_PORT_CANDIDATES = ['/dev/ttyACM0', '/dev/ttyUSB0', '/dev/ttyACM1', '/dev/ttyUSB1']
 CACHE_BURST_LIMIT = 50
 TELEMETRY_CYCLE_INTERVAL_S = 5
+
+
+class TrainIdController:
+    def __init__(self, initial_id="T01"):
+        self._lock = threading.Lock()
+        self._train_id = initial_id.strip().upper()
+
+    def get(self):
+        with self._lock:
+            return self._train_id
+
+    def set(self, new_id):
+        candidate = new_id.strip().upper()
+        if not candidate or not candidate.startswith("T"):
+            return False
+        with self._lock:
+            self._train_id = candidate
+        return True
+
+
+def train_id_cli_loop(controller):
+    print("[CLI] Cabin commands: SETID <TrainID>, SHOWID")
+    while True:
+        try:
+            cmd = input().strip()
+        except EOFError:
+            time.sleep(0.2)
+            continue
+        except Exception:
+            time.sleep(0.2)
+            continue
+
+        if not cmd:
+            continue
+
+        upper = cmd.upper()
+        if upper.startswith("SETID "):
+            parts = cmd.split(maxsplit=1)
+            if len(parts) == 2 and controller.set(parts[1]):
+                print(f"[CLI] Active train ID updated to {controller.get()}")
+            else:
+                print("[CLI] Invalid TrainID. Example: SETID T02")
+        elif upper == "SHOWID":
+            print(f"[CLI] Active train ID is {controller.get()}")
 
 class TelemetryCache:
     def __init__(self, db_path: str = CACHE_DB_PATH):
@@ -67,6 +112,10 @@ def main(train_id="T01"):
     from mqtt import MqttSubscriberThread
     # This file represents your "Main Application Logic"
     
+    train_id_controller = TrainIdController(train_id)
+    cli_thread = threading.Thread(target=train_id_cli_loop, args=(train_id_controller,), daemon=True)
+    cli_thread.start()
+
     # Initialize the sensor (starts its own background thread)
     # sensor = SonarSensor()
     sensor1 = SonarSensor(trig_pin=23, echo_pin=24) # 1st seat
@@ -84,12 +133,16 @@ def main(train_id="T01"):
     try:
         sensor1.start()
         sensor2.start()
-        print(f"Main System Started for {train_id}. Sensors run in background.")
+        print(
+            f"Main System Started for {train_id_controller.get()}. "
+            "Sensors run in background."
+        )
 
         mqtt_thread = MqttSubscriberThread(mqtt_queue)
         mqtt_thread.start()
 
         while True:
+            active_train_id = train_id_controller.get()
             seat_status1 = sensor1.get_latest_status()
             distance1 = sensor1.get_latest_distance()
             sensor_health1 = sensor1.get_health_status()
@@ -130,7 +183,7 @@ def main(train_id="T01"):
                 final_seat2_status = "EMPTY" if seat_status2 == 0 else ("TAKEN" if seat2_cam else "OBJECT")
 
                 msg = (
-                    f"ID:{train_id}"
+                    f"ID:{active_train_id}"
                     f"|S1:{seat_status1}"
                     f"|S2:{seat_status2}"
                     f"|CAP:{message_data['capacity']}"
@@ -176,7 +229,7 @@ def main(train_id="T01"):
 
             else:
                 msg = (
-                    f"ID:{train_id}"
+                    f"ID:{active_train_id}"
                     f"|S1:{seat_status1}"
                     f"|S2:{seat_status2}"
                     f"|UH1:{sensor_health1}"

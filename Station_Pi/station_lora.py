@@ -1,3 +1,4 @@
+import re
 import time, serial, threading, sys
 from dashboard_web.app import DashboardState, create_flask_app, flask_thread
 
@@ -5,6 +6,9 @@ from dashboard_web.app import DashboardState, create_flask_app, flask_thread
 # three missed cycles as offline for dashboard operator visibility.
 CABIN_LINK_DEGRADED_S = 30
 CABIN_LINK_OFFLINE_S = 60
+ACTIVE_SWITCH_MARGIN_DB = 8.0
+SIGNAL_FRESHNESS_S = 15.0
+LEAVING_LOCKOUT_S = 60
 
 class StationReceiver:
     def __init__(self, dashboard_state):
@@ -14,6 +18,8 @@ class StationReceiver:
         self.dashboard_state = dashboard_state
         self.last_packet_time = None
         self.last_camera_packet_time = None
+        self.train_signals = {}
+        self.train_lockouts = {}
 
     def handle_arrival(self, train_id):
         """Simulate a train arriving and locking onto its signal."""
@@ -42,6 +48,10 @@ class StationReceiver:
             ultrasonic_health2="UNKNOWN",
             cabin_link_status="WAITING"
         )
+
+    def handle_auto_arrival(self, train_id):
+        print(f"\n[AUTO] Locking onto strongest train signal: {train_id}")
+        self.handle_arrival(train_id)
 
     def handle_departure(self):
         """Simulate the train leaving."""
@@ -74,7 +84,90 @@ class StationReceiver:
         else:
             print("[ERROR] No train is currently at the platform.")
 
-    def process_lora_packet(self, raw_data):
+    def handle_leaving(self, train_id, lockout_s=LEAVING_LOCKOUT_S):
+        train_id = train_id.strip().upper()
+        until_ts = time.time() + lockout_s
+        self.train_lockouts[train_id] = until_ts
+        print(
+            f"[EVENT] Train {train_id} marked as leaving. "
+            f"Lockout active for {lockout_s}s."
+        )
+
+        if self.active_train == train_id:
+            self.handle_departure()
+
+    def _is_locked_out(self, train_id):
+        until = self.train_lockouts.get(train_id)
+        if until is None:
+            return False
+        if time.time() >= until:
+            del self.train_lockouts[train_id]
+            return False
+        return True
+
+    def _record_signal(self, train_id, rssi):
+        now = time.time()
+        existing = self.train_signals.get(train_id, {})
+        if rssi is None:
+            rssi = existing.get("rssi", -999.0)
+        self.train_signals[train_id] = {
+            "rssi": float(rssi),
+            "last_seen": now,
+        }
+
+    def _select_best_train(self):
+        now = time.time()
+        best_id = None
+        best_rssi = -999.0
+        for train_id, info in self.train_signals.items():
+            if self._is_locked_out(train_id):
+                continue
+            age = now - info.get("last_seen", 0)
+            if age > SIGNAL_FRESHNESS_S:
+                continue
+            rssi = info.get("rssi", -999.0)
+            if best_id is None or rssi > best_rssi:
+                best_id = train_id
+                best_rssi = rssi
+        return best_id, best_rssi
+
+    def _maybe_auto_select_active(self):
+        best_id, best_rssi = self._select_best_train()
+        if best_id is None:
+            return
+
+        if self.active_train is None:
+            self.handle_auto_arrival(best_id)
+            return
+
+        active_info = self.train_signals.get(self.active_train)
+        if not active_info:
+            self.handle_auto_arrival(best_id)
+            return
+
+        active_age = time.time() - active_info.get("last_seen", 0)
+        active_rssi = active_info.get("rssi", -999.0)
+        should_switch = (
+            best_id != self.active_train and (
+                active_age > SIGNAL_FRESHNESS_S or
+                (best_rssi - active_rssi) >= ACTIVE_SWITCH_MARGIN_DB
+            )
+        )
+        if should_switch:
+            print(
+                f"[AUTO] Switching active train {self.active_train} -> {best_id} "
+                f"(RSSI {active_rssi:.1f} dBm -> {best_rssi:.1f} dBm)"
+            )
+            self.handle_arrival(best_id)
+
+    @staticmethod
+    def _is_cabin_packet(fields):
+        train_id = fields.get('ID', '')
+        if not re.match(r"^T[0-9A-Z]+$", train_id):
+            return False
+        return 'S1' in fields and 'S2' in fields
+
+    def process_lora_packet(self, raw_data, rssi=None):
         """
         Parses incoming LoRa data.
 
@@ -89,9 +182,6 @@ class StationReceiver:
         raw_data = raw_data.strip()
         print(raw_data)
 
-        if not self.active_train:
-            return
-
         try:
             fields = {}
             for part in raw_data.split('|'):
@@ -100,10 +190,19 @@ class StationReceiver:
                 key, value = part.split(':', 1)
                 fields[key.strip()] = value.strip()
 
+            if not self._is_cabin_packet(fields):
+                return
+
             # Required fields
-            received_id = fields['ID']
+            received_id = fields['ID'].upper()
             received_status1 = int(fields['S1'])
             received_status2 = int(fields['S2'])
+
+            if self._is_locked_out(received_id):
+                return
+
+            self._record_signal(received_id, rssi)
+            self._maybe_auto_select_active()
 
             ultrasonic_health1 = fields.get('UH1', "UNKNOWN")
             ultrasonic_health2 = fields.get('UH2', "UNKNOWN")
@@ -302,11 +401,14 @@ def serial_listener(station, port_name):
                         parts = line.split("[RX] Data: ")
                         if len(parts) > 1:
                             payload_section = parts[1]
-                            payload = payload_section.split(" | ")[0]
-                            station.process_lora_packet(payload)
+                            payload = payload_section.split(" | RSSI:")[0].strip()
+
+                            rssi_match = re.search(r"RSSI:\s*(-?[0-9]+(?:\.[0-9]+)?)\s*dBm", line)
+                            rssi = float(rssi_match.group(1)) if rssi_match else None
+                            station.process_lora_packet(payload, rssi=rssi)
 
                     elif line.startswith("ID:") and "|S1:" in line and "|S2:" in line:
-                        station.process_lora_packet(line)
+                        station.process_lora_packet(line, rssi=None)
 
                 except Exception as e:
                     print(f"[SERIAL ERROR] {e}")
@@ -353,7 +455,9 @@ def main():
 
     print("--- STATION PI DASHBOARD SIMULATOR ---")
     print("Commands:")
+    print("  AUTO mode: strongest fresh RSSI train is selected automatically")
     print("  ARRIVE <ID>  -> Simulate train arrival")
+    print(f"  LEAVING <ID> -> Lock out train for {LEAVING_LOCKOUT_S}s")
     print("  DEPART       -> Simulate train departure")
     print("  DATA <MSG>   -> Simulate receiving LoRa packet")
     print("  EXIT         -> Quit")
@@ -370,6 +474,14 @@ def main():
                     station.handle_arrival(train_id)
                 else:
                     print("[ERROR] Usage: ARRIVE <TrainID>")
+
+            elif user_input.startswith("LEAVING"):
+                parts = user_input.split()
+                if len(parts) > 1:
+                    train_id = parts[1]
+                    station.handle_leaving(train_id)
+                else:
+                    print("[ERROR] Usage: LEAVING <TrainID>")
 
             elif user_input == "DEPART":
                 station.handle_departure()
