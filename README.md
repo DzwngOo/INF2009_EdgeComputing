@@ -320,6 +320,8 @@ Current scope notes:
   - Cabin now writes unsent telemetry to local SQLite (`Ultrasonic_Pi/telemetry_cache.db`) when LoRa is unavailable.
   - On reconnect, Cabin replays cached packets in FIFO bursts before sending the newest packet.
   - This provides store-and-forward behavior during temporary LoRa outages.
+- Camera Pi reconnect visibility:
+  - `Camera_Pi/mqtt_worker.py` now logs MQTT connection state transitions (`Connected`, `Connection lost`, reconnect attempts) so reconnection is visible on Camera Pi logs, not only on Station dashboard.
 - Station Pi failure:
   - Current behavior is best-effort send from Cabin; if Station is down, packets are not durably buffered for later replay in this Python path.
   - For guaranteed replay, add explicit durable store-and-forward (not currently implemented).
@@ -367,3 +369,13 @@ allow_anonymous true
 ```bash
 sudo systemctl restart mosquitto   # Restart Mosquitto to apply changes
 ```
+
+## 2.3 Testing reconnection and SQLite cache fallback
+
+- `test_network_resilience.sh` tests the **MQTT network path** (tc-netem delay/loss on broker link). It is useful for Camera↔Broker resilience, but it does **not** directly test Cabin LoRa serial disconnection.
+- To test Cabin SQLite store-and-forward specifically:
+  1. Start Cabin Pi (`Ultrasonic_Pi/cabin_lora.py`) and Station receiver.
+  2. Simulate LoRa outage by unplugging the Cabin LoRa USB serial (or disabling the serial device).
+  3. Confirm Cabin logs show `[CACHE] Stored packet locally ...` and that `Ultrasonic_Pi/telemetry_cache.db` grows.
+  4. Reconnect LoRa USB serial.
+  5. Confirm Cabin logs show `[CACHE] Replayed <N> cached telemetry packets.` and Station starts receiving the backlog + fresh packets.
