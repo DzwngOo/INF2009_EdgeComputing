@@ -1,4 +1,4 @@
-import time, serial, queue, uuid
+import time, serial, queue
 from ultrasonic import SonarSensor
 from mqtt import MqttSubscriberThread
 import sqlite_helper
@@ -144,10 +144,8 @@ def main(train_id="T01"):
                 final_seat1_status = "EMPTY" if seat_status1 == 0 else ("TAKEN" if seat1_cam else "OBJECT")
                 final_seat2_status = "EMPTY" if seat_status2 == 0 else ("TAKEN" if seat2_cam else "OBJECT")
 
-                msg_id = str(uuid.uuid4())[:8]
                 msg = (
                     f"ID:{train_id}"
-                    f"|MSGID:{msg_id}"
                     f"|S1:{seat_status1}"
                     f"|S2:{seat_status2}"
                     f"|CAP:{message_data['capacity']}"
@@ -170,10 +168,8 @@ def main(train_id="T01"):
                 print(f"   L Final Seat 2 Status: {final_seat2_status}")
 
             else:
-                msg_id = str(uuid.uuid4())[:8]
                 msg = (
                     f"ID:{train_id}"
-                    f"|MSGID:{msg_id}"
                     f"|S1:{seat_status1}"
                     f"|S2:{seat_status2}"
                 )
@@ -214,25 +210,22 @@ def main(train_id="T01"):
             if cached_msg is not None:
                 print("[SQLITE] Cached message exists. Trying cached latest message first...")
 
-                cached_msg_id = None
-                for part in cached_msg.split('|'):
-                    if part.startswith("MSGID:"):
-                        cached_msg_id = part.split(":", 1)[1]
-                        break
-
-                if send_lora_message(lora_serial, cached_msg) and cached_msg_id and wait_for_ack(lora_serial, train_id, cached_msg_id):
+                if send_lora_message(lora_serial, cached_msg):
                     sqlite_helper.clear_cached_message()
+
+                    # Skip sending current live message this cycle
+                    # so we do not send two near-duplicate state packets back-to-back.
                     time.sleep(TX_INTERVAL_SECONDS)
                     continue
                 else:
+                    # Still failing: replace old cache with the newest current state
+                    # so only the latest state is preserved.
                     sqlite_helper.cache_latest_message(msg)
                     time.sleep(TX_INTERVAL_SECONDS)
                     continue
 
-            if send_lora_message(lora_serial, msg):
-                if not wait_for_ack(lora_serial, train_id, msg_id):
-                    sqlite_helper.cache_latest_message(msg)
-            else:
+            # No cached message pending, try current live message
+            if not send_lora_message(lora_serial, msg):
                 sqlite_helper.cache_latest_message(msg)
 
             time.sleep(TX_INTERVAL_SECONDS)
