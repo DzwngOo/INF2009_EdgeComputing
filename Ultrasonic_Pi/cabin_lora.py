@@ -41,8 +41,8 @@ def send_lora_message(lora_serial, payload):
     if not lora_serial:
         print("[ERROR] No LoRa serial available.")
         return False
-
     try:
+        lora_serial.reset_input_buffer()
         print(payload)
         lora_serial.write((payload + '\n').encode('utf-8'))
         print("[LoRa] Message sent successfully.")
@@ -51,11 +51,12 @@ def send_lora_message(lora_serial, payload):
         print(f"[ERROR] LoRa Write Failed: {e}")
         return False
     
-def wait_for_ack(lora_serial, train_id, msg_id, timeout=1.5):
-    """Wait briefly for matching ACK from station."""
+def wait_for_ack(lora_serial, train_id, msg_id, timeout=3.0):
+    """Wait for ACK from station, accepting wrapped LoRa module output."""
     if not lora_serial:
         return False
 
+    expected_ack = f"ACK|ID:{train_id}|MSGID:{msg_id}"
     end_time = time.time() + timeout
 
     while time.time() < end_time:
@@ -64,10 +65,24 @@ def wait_for_ack(lora_serial, train_id, msg_id, timeout=1.5):
                 line = lora_serial.readline().decode('utf-8', errors='ignore').strip()
                 print(f"[CABIN RAW] {line}")
 
-                expected_ack = f"ACK|ID:{train_id}|MSGID:{msg_id}"
+                # Ignore local TX status noise from the module
+                if line.startswith("Sending:") or line == "TX Done":
+                    continue
+
+                # Case 1: bare ACK line
                 if line == expected_ack:
                     print(f"[CABIN ACK] {line}")
                     return True
+
+                # Case 2: wrapped RX line from module
+                if "[RX] Data: " in line:
+                    payload_section = line.split("[RX] Data: ", 1)[1]
+                    payload = payload_section.split(" | ")[0].strip()
+
+                    if payload == expected_ack:
+                        print(f"[CABIN ACK] {payload}")
+                        return True
+
         except Exception as e:
             print(f"[CABIN ACK ERROR] {e}")
             return False

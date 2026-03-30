@@ -180,6 +180,7 @@ def send_ack(ser, train_id, msg_id):
 
     ack_msg = f"ACK|ID:{train_id}|MSGID:{msg_id}"
     try:
+        time.sleep(0.2)
         ser.write((ack_msg + '\n').encode('utf-8'))
         print(f"[ACK SENT] {ack_msg}")
     except Exception as e:
