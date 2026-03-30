@@ -72,8 +72,12 @@ class StationReceiver:
     def process_lora_packet(self, raw_data):
         """
         Parses incoming LoRa data.
-        Expected format:
+
+        Full format:
         ID:T01|S1:1|S2:0|CAP:40|CONF:0.800|OCC:0.250|CAB:LOW|SEAT1_CAM:1|SEAT1_FINAL:TAKEN|SEAT2_CAM:0|SEAT2_FINAL:EMPTY
+
+        Ultrasonic-only fallback format:
+        ID:T01|S1:1|S2:0|UH1:OK|UH2:OK
         """
         station_lora_rx_ns = time.time_ns()
         station_lora_rx_perf_ns = time.perf_counter_ns()
@@ -86,42 +90,65 @@ class StationReceiver:
         try:
             fields = {}
             for part in raw_data.split('|'):
+                if ':' not in part:
+                    continue
                 key, value = part.split(':', 1)
-                fields[key] = value
+                fields[key.strip()] = value.strip()
 
+            # Required fields
             received_id = fields['ID']
             received_status1 = int(fields['S1'])
             received_status2 = int(fields['S2'])
 
-            capacity = int(fields['CAP']) if 'CAP' in fields else None
-            confidence_avg = float(fields['CONF']) if 'CONF' in fields else None
-            occupancy_ratio = float(fields['OCC']) if 'OCC' in fields else None
-            cabin_status = fields.get('CAB')
+            ultrasonic_text1 = "TAKEN" if received_status1 == 1 else "EMPTY"
+            ultrasonic_text2 = "TAKEN" if received_status2 == 1 else "EMPTY"
 
-            seat1_cam = int(fields['SEAT1_CAM']) if 'SEAT1_CAM' in fields else None
-            seat1_final = fields.get('SEAT1_FINAL')
-
-            seat2_cam = int(fields['SEAT2_CAM']) if 'SEAT2_CAM' in fields else None
-            seat2_final = fields.get('SEAT2_FINAL')
             ultrasonic_health1 = fields.get('UH1', "UNKNOWN")
             ultrasonic_health2 = fields.get('UH2', "UNKNOWN")
+
             msg_id = fields.get('MID')
             cam_capture_start_ns = int(fields['CAM_CAP_NS']) if 'CAM_CAP_NS' in fields else None
             cam_capture_start_perf_ns = int(fields['CAM_CAP_PNS']) if 'CAM_CAP_PNS' in fields else None
             cam_publish_done_ns = int(fields['CAM_PUB_NS']) if 'CAM_PUB_NS' in fields else None
             cam_publish_done_perf_ns = int(fields['CAM_PUB_PNS']) if 'CAM_PUB_PNS' in fields else None
 
-            ultrasonic_text1 = "TAKEN" if received_status1 == 1 else "EMPTY"
-            ultrasonic_text2 = "TAKEN" if received_status2 == 1 else "EMPTY"
+            # Detect whether any camera-side data exists
+            camera_payload_present = any(
+                key in fields for key in (
+                    'CAP', 'CONF', 'OCC', 'CAB',
+                    'SEAT1_CAM', 'SEAT1_FINAL',
+                    'SEAT2_CAM', 'SEAT2_FINAL'
+                )
+            )
+
+            # Optional camera/cabin fields
+            capacity = int(fields['CAP']) if 'CAP' in fields else None
+            confidence_avg = float(fields['CONF']) if 'CONF' in fields else None
+            occupancy_ratio = float(fields['OCC']) if 'OCC' in fields else None
+            cabin_status = fields.get('CAB')
+
+            seat1_cam = int(fields['SEAT1_CAM']) if 'SEAT1_CAM' in fields else None
+            seat2_cam = int(fields['SEAT2_CAM']) if 'SEAT2_CAM' in fields else None
+
+            # Fallback logic:
+            # if camera is down and SEAT*_FINAL is missing, use ultrasonic status
+            seat1_final = fields.get('SEAT1_FINAL', ultrasonic_text1)
+            seat2_final = fields.get('SEAT2_FINAL', ultrasonic_text2)
 
             seat1_cam_text = "UNKNOWN" if seat1_cam is None else ("TAKEN" if seat1_cam == 1 else "EMPTY")
             seat2_cam_text = "UNKNOWN" if seat2_cam is None else ("TAKEN" if seat2_cam == 1 else "EMPTY")
-            camera_status = "ONLINE" if (capacity is not None and confidence_avg is not None) else "OFFLINE"
+
+            camera_status = "ONLINE" if camera_payload_present else "OFFLINE"
+
+            if not camera_payload_present:
+                print("[MODE] Ultrasonic-only fallback packet received (camera offline).")
 
             print(f"\n[PARSED DATA]")
             print(f"   L Train ID: {received_id}")
             print(f"   L Ultrasonic Seat 1: {ultrasonic_text1}")
             print(f"   L Ultrasonic Seat 2: {ultrasonic_text2}")
+            print(f"   L Ultrasonic Health 1: {ultrasonic_health1}")
+            print(f"   L Ultrasonic Health 2: {ultrasonic_health2}")
 
             if capacity is not None:
                 print(f"   L Capacity: {capacity}")
@@ -136,6 +163,7 @@ class StationReceiver:
             print(f"   L Final Seat 1: {seat1_final}")
             print(f"   L Camera Seat 2: {seat2_cam_text}")
             print(f"   L Final Seat 2: {seat2_final}")
+            print(f"   L Camera Status: {camera_status}")
 
             if received_id == self.active_train:
                 self.seat_status1 = received_status1
@@ -177,11 +205,12 @@ class StationReceiver:
             else:
                 print(f"[IGNORE] Packet train ID {received_id} does not match active train {self.active_train}")
 
-        except (IndexError, ValueError, KeyError):
+        except (IndexError, ValueError, KeyError) as e:
             if "Heartbeat" in raw_data or "Ping" in raw_data or "CRC" in raw_data:
                 pass
             else:
                 print(f"[ERROR] Malformed packet received: {raw_data}")
+                print(f"[ERROR] Parse details: {e}")
 
     def refresh_link_health(self):
         if not self.active_train:
