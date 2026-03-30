@@ -55,11 +55,11 @@ class StationReceiver:
         else:
             print("[ERROR] No train is currently at the platform.")
 
-    def process_lora_packet(self, raw_data):
+    def process_lora_packet(self, raw_data, ser=None):
         """
         Parses incoming LoRa data.
         Expected format:
-        ID:T01|S1:1|S2:0|CAP:40|CONF:0.800|OCC:0.250|CAB:LOW|SEAT1_CAM:1|SEAT1_FINAL:TAKEN|SEAT2_CAM:0|SEAT2_FINAL:EMPTY
+        ID:T01|MSGID:abc123|S1:1|S2:0|CAP:40|CONF:0.800|OCC:0.250|CAB:LOW|SEAT1_CAM:1|SEAT1_FINAL:TAKEN|SEAT2_CAM:0|SEAT2_FINAL:EMPTY
         """
         raw_data = raw_data.strip()
         print(raw_data)
@@ -74,6 +74,7 @@ class StationReceiver:
                 fields[key] = value
 
             received_id = fields['ID']
+            msg_id = fields.get('MSGID')  # new
             received_status1 = int(fields['S1'])
             received_status2 = int(fields['S2'])
 
@@ -96,6 +97,7 @@ class StationReceiver:
 
             print(f"\n[PARSED DATA]")
             print(f"   L Train ID: {received_id}")
+            print(f"   L MSGID: {msg_id}")
             print(f"   L Ultrasonic Seat 1: {ultrasonic_text1}")
             print(f"   L Ultrasonic Seat 2: {ultrasonic_text2}")
 
@@ -130,6 +132,11 @@ class StationReceiver:
                     seat2_cam=seat2_cam_text,
                     seat2_final=seat2_final
                 )
+
+                # Only ACK after successful processing and valid active train match
+                if msg_id:
+                    send_ack(ser, received_id, msg_id)
+
             else:
                 print(f"[IGNORE] Packet train ID {received_id} does not match active train {self.active_train}")
 
@@ -155,10 +162,10 @@ def serial_listener(station, port_name):
                         if len(parts) > 1:
                             payload_section = parts[1]
                             payload = payload_section.split(" | ")[0]
-                            station.process_lora_packet(payload)
+                            station.process_lora_packet(payload, ser)
 
                     elif line.startswith("ID:") and "|S1:" in line and "|S2:" in line:
-                        station.process_lora_packet(line)
+                        station.process_lora_packet(line, ser)
 
                 except Exception as e:
                     print(f"[SERIAL ERROR] {e}")
@@ -166,6 +173,17 @@ def serial_listener(station, port_name):
     except serial.SerialException:
         print(f"[WARNING] Could not open {port_name}. Running in Simulation-Only mode.")
 
+def send_ack(ser, train_id, msg_id):
+    """Send ACK back to cabin for a successfully processed packet."""
+    if ser is None:
+        return
+
+    ack_msg = f"ACK|ID:{train_id}|MSGID:{msg_id}"
+    try:
+        ser.write((ack_msg + '\n').encode('utf-8'))
+        print(f"[ACK SENT] {ack_msg}")
+    except Exception as e:
+        print(f"[ACK ERROR] Failed to send ACK: {e}")
 
 def main():
     dashboard_state = DashboardState()

@@ -1,12 +1,58 @@
 import time, serial, queue
 from ultrasonic import SonarSensor
 from mqtt import MqttSubscriberThread
+import sqlite_helper
 
-# This file represents your "Main Application Logic"
-# It runs on the main thread and imports the sensor driver
+TX_INTERVAL_SECONDS = 5
+
+# =========================
+# LoRa helper functions
+# =========================
+def connect_lora():
+    """Try to connect to LoRa module on common serial ports."""
+    try:
+        port_candidates = ['/dev/ttyACM0', '/dev/ttyUSB0', '/dev/ttyACM1', '/dev/ttyUSB1']
+        for port in port_candidates:
+            try:
+                ser = serial.Serial(port, 115200, timeout=1)
+                print(f"[SYSTEM] Connected to LoRa module on {port}")
+                return ser
+            except serial.SerialException:
+                pass
+
+        print("[WARNING] No LoRa module found on standard ports. Running in Simulation Mode.")
+        return None
+
+    except Exception as e:
+        print(f"[ERROR] Serial setup failed: {e}")
+        return None
+
+
+def send_lora_message(lora_serial, payload):
+    """
+    Attempt to send payload over LoRa.
+    Returns True on success, False on failure.
+
+    Note:
+    This only confirms the local serial/module write succeeded.
+    It does NOT confirm the remote receiver got the packet.
+    For true delivery confirmation, you need an ACK from the receiver.
+    """
+    if not lora_serial:
+        print("[ERROR] No LoRa serial available.")
+        return False
+
+    try:
+        print(payload)
+        lora_serial.write((payload + '\n').encode('utf-8'))
+        print("[LoRa] Message sent successfully.")
+        return True
+    except Exception as e:
+        print(f"[ERROR] LoRa Write Failed: {e}")
+        return False
 
 def main(train_id="T01"):
-    # This file represents your "Main Application Logic"
+    sqlite_helper.init_db()
     
     # Initialize the sensor (starts its own background thread)
     # sensor = SonarSensor()
@@ -14,22 +60,7 @@ def main(train_id="T01"):
     sensor2 = SonarSensor(trig_pin=17, echo_pin=27) # 2nd seat
     
     # Initialize Serial connection to LoRa module (PlatformIO device)
-    lora_serial = None
-    try:
-        # Common ports for Arduino/PlatformIO devices on Raspbian
-        port_candidates = ['/dev/ttyACM0', '/dev/ttyUSB0', '/dev/ttyACM1', '/dev/ttyUSB1']
-        for port in port_candidates:
-            try:
-                lora_serial = serial.Serial(port, 115200, timeout=1)
-                print(f"[SYSTEM] Connected to LoRa module on {port}")
-                break
-            except serial.SerialException:
-                pass
-        
-        if not lora_serial:
-            print("[WARNING] No LoRa module found on standard ports. Running in Simulation Mode.")
-    except Exception as e:
-        print(f"[ERROR] Serial setup failed: {e}")
+    lora_serial = connect_lora()
 
     # Create a Queue to hold the data from MQTT
     mqtt_queue = queue.Queue()
@@ -130,20 +161,40 @@ def main(train_id="T01"):
         # ==== XK's ====
             
             # Send to LoRa module if connected
-            if lora_serial:
-                try:
-                    print(msg)
-                    lora_serial.write((msg + '\n').encode('utf-8'))
-                except Exception as e:
-                    print(f"   [ERROR] LoRa Write Failed: {e}")
+            # =========================
+            # Latest-only SQLite fallback logic
+            # =========================
+            cached_msg = sqlite_helper.get_cached_message()
 
-            time.sleep(5)
-            
+            if cached_msg is not None:
+                print("[SQLITE] Cached message exists. Trying cached latest message first...")
+
+                if send_lora_message(lora_serial, cached_msg):
+                    sqlite_helper.clear_cached_message()
+
+                    # Skip sending current live message this cycle
+                    # so we do not send two near-duplicate state packets back-to-back.
+                    time.sleep(TX_INTERVAL_SECONDS)
+                    continue
+                else:
+                    # Still failing: replace old cache with the newest current state
+                    # so only the latest state is preserved.
+                    sqlite_helper.cache_latest_message(msg)
+                    time.sleep(TX_INTERVAL_SECONDS)
+                    continue
+
+            # No cached message pending, try current live message
+            if not send_lora_message(lora_serial, msg):
+                sqlite_helper.cache_latest_message(msg)
+
+            time.sleep(TX_INTERVAL_SECONDS)
+
     except KeyboardInterrupt:
         print("\nStopping Main System...")
+
     finally:
-        # Always clean up the sensor thread on exit
         sensor1.stop()
+        sensor2.stop()
         if lora_serial:
             lora_serial.close()
 
