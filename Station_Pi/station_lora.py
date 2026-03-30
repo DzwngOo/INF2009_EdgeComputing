@@ -1,6 +1,11 @@
 import time, serial, threading, sys
 from dashboard_web.app import DashboardState, create_flask_app, flask_thread
 
+# Cabin transmits every ~20s; classify one missed cycle as degraded and
+# three missed cycles as offline for dashboard operator visibility.
+CABIN_LINK_DEGRADED_S = 30
+CABIN_LINK_OFFLINE_S = 60
+
 class StationReceiver:
     def __init__(self, dashboard_state):
         self.active_train = None
@@ -186,9 +191,9 @@ class StationReceiver:
             self.dashboard_state.update(cabin_link_status="WAITING")
             return
         lag = now - self.last_packet_time
-        if lag > 60:
+        if lag > CABIN_LINK_OFFLINE_S:
             status = "OFFLINE"
-        elif lag > 30:
+        elif lag > CABIN_LINK_DEGRADED_S:
             status = "DEGRADED"
         else:
             status = "ONLINE"

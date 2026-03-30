@@ -29,16 +29,14 @@ class MqttSubscriberThread(threading.Thread):
         try:
             data = json.loads(msg.payload.decode())
             # print(f"Received JSON data: {data}")
-            try:
-                self.mqtt_queue.put_nowait(data)
-            except queue.Full:
-                try:
-                    _ = self.mqtt_queue.get_nowait()
-                except queue.Empty:
-                    pass
+            while True:
                 try:
                     self.mqtt_queue.put_nowait(data)
+                    break
                 except queue.Full:
-                    pass
+                    try:
+                        _ = self.mqtt_queue.get_nowait()
+                    except queue.Empty:
+                        break
         except json.JSONDecodeError:
             print("Failed to decode JSON from message.")
