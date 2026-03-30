@@ -269,7 +269,7 @@ def inference_loop(
             ok, frame = cap.read()
             if not ok:
                 if not camera_offline:
-                    print("[CAMERA] Video source unavailable. Waiting for reconnect...")
+                    print("[CAMERA] Video source unavailable. Waiting for reconnection...")
                     camera_offline = True
                 try:
                     cap.release()
