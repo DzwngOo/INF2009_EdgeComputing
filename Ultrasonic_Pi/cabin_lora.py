@@ -1,4 +1,4 @@
-import time, serial, queue
+import time, serial, queue, uuid
 from ultrasonic import SonarSensor
 from mqtt import MqttSubscriberThread
 import sqlite_helper
@@ -50,6 +50,32 @@ def send_lora_message(lora_serial, payload):
     except Exception as e:
         print(f"[ERROR] LoRa Write Failed: {e}")
         return False
+    
+def wait_for_ack(lora_serial, train_id, msg_id, timeout=1.5):
+    """Wait briefly for matching ACK from station."""
+    if not lora_serial:
+        return False
+
+    end_time = time.time() + timeout
+
+    while time.time() < end_time:
+        try:
+            if lora_serial.in_waiting:
+                line = lora_serial.readline().decode('utf-8', errors='ignore').strip()
+                print(f"[CABIN RAW] {line}")
+
+                expected_ack = f"ACK|ID:{train_id}|MSGID:{msg_id}"
+                if line == expected_ack:
+                    print(f"[CABIN ACK] {line}")
+                    return True
+        except Exception as e:
+            print(f"[CABIN ACK ERROR] {e}")
+            return False
+
+        time.sleep(0.05)
+
+    print(f"[CABIN ACK TIMEOUT] No ACK for MSGID {msg_id}")
+    return False
 
 def main(train_id="T01"):
     sqlite_helper.init_db()
@@ -103,8 +129,10 @@ def main(train_id="T01"):
                 final_seat1_status = "EMPTY" if seat_status1 == 0 else ("TAKEN" if seat1_cam else "OBJECT")
                 final_seat2_status = "EMPTY" if seat_status2 == 0 else ("TAKEN" if seat2_cam else "OBJECT")
 
+                msg_id = str(uuid.uuid4())[:8]
                 msg = (
                     f"ID:{train_id}"
+                    f"|MSGID:{msg_id}"
                     f"|S1:{seat_status1}"
                     f"|S2:{seat_status2}"
                     f"|CAP:{message_data['capacity']}"
@@ -127,8 +155,10 @@ def main(train_id="T01"):
                 print(f"   L Final Seat 2 Status: {final_seat2_status}")
 
             else:
+                msg_id = str(uuid.uuid4())[:8]
                 msg = (
                     f"ID:{train_id}"
+                    f"|MSGID:{msg_id}"
                     f"|S1:{seat_status1}"
                     f"|S2:{seat_status2}"
                 )
@@ -169,22 +199,25 @@ def main(train_id="T01"):
             if cached_msg is not None:
                 print("[SQLITE] Cached message exists. Trying cached latest message first...")
 
-                if send_lora_message(lora_serial, cached_msg):
-                    sqlite_helper.clear_cached_message()
+                cached_msg_id = None
+                for part in cached_msg.split('|'):
+                    if part.startswith("MSGID:"):
+                        cached_msg_id = part.split(":", 1)[1]
+                        break
 
-                    # Skip sending current live message this cycle
-                    # so we do not send two near-duplicate state packets back-to-back.
+                if send_lora_message(lora_serial, cached_msg) and cached_msg_id and wait_for_ack(lora_serial, train_id, cached_msg_id):
+                    sqlite_helper.clear_cached_message()
                     time.sleep(TX_INTERVAL_SECONDS)
                     continue
                 else:
-                    # Still failing: replace old cache with the newest current state
-                    # so only the latest state is preserved.
                     sqlite_helper.cache_latest_message(msg)
                     time.sleep(TX_INTERVAL_SECONDS)
                     continue
 
-            # No cached message pending, try current live message
-            if not send_lora_message(lora_serial, msg):
+            if send_lora_message(lora_serial, msg):
+                if not wait_for_ack(lora_serial, train_id, msg_id):
+                    sqlite_helper.cache_latest_message(msg)
+            else:
                 sqlite_helper.cache_latest_message(msg)
 
             time.sleep(TX_INTERVAL_SECONDS)
