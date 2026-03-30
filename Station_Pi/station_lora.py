@@ -13,6 +13,7 @@ class StationReceiver:
         self.seat_status2 = None
         self.dashboard_state = dashboard_state
         self.last_packet_time = None
+        self.last_camera_packet_time = None
 
     def handle_arrival(self, train_id):
         """Simulate a train arriving and locking onto its signal."""
@@ -21,6 +22,8 @@ class StationReceiver:
         self.active_train = train_id
         self.seat_status1 = None
         self.seat_status2 = None
+        self.last_packet_time = None
+        self.last_camera_packet_time = None
 
         self.dashboard_state.update(
             active_train=train_id,
@@ -48,6 +51,8 @@ class StationReceiver:
             self.active_train = None
             self.seat_status1 = None
             self.seat_status2 = None
+            self.last_packet_time = None
+            self.last_camera_packet_time = None
 
             self.dashboard_state.update(
                 active_train=None,
@@ -224,6 +229,8 @@ class StationReceiver:
                     cabin_link_status="ONLINE"
                 )
                 self.last_packet_time = time.time()
+                if camera_payload_present:
+                    self.last_camera_packet_time = self.last_packet_time
 
                 station_dashboard_done_ns = time.time_ns()
                 station_dashboard_done_perf_ns = time.perf_counter_ns()
@@ -265,6 +272,21 @@ class StationReceiver:
             status = "ONLINE"
         self.dashboard_state.update(cabin_link_status=status)
 
+    def refresh_camera_health(self):
+        if not self.active_train:
+            return
+        if self.last_camera_packet_time is None:
+            # Preserve explicit offline only until first camera packet comes back.
+            return
+        lag = time.time() - self.last_camera_packet_time
+        if lag > CABIN_LINK_OFFLINE_S:
+            camera_status = "OFFLINE"
+        elif lag > CABIN_LINK_DEGRADED_S:
+            camera_status = "DEGRADED"
+        else:
+            camera_status = "ONLINE"
+        self.dashboard_state.update(camera_status=camera_status)
+
 def serial_listener(station, port_name):
     """Background thread to listen to real LoRa hardware"""
     try:
@@ -296,6 +318,7 @@ def serial_listener(station, port_name):
 def link_health_watchdog(station):
     while True:
         station.refresh_link_health()
+        station.refresh_camera_health()
         time.sleep(1.0)
 
 

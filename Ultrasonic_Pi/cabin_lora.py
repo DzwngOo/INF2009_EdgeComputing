@@ -1,11 +1,69 @@
+import os
+import sqlite3
 import time, serial, queue
-from ultrasonic import SonarSensor
-from mqtt import MqttSubscriberThread
 
 # This file represents your "Main Application Logic"
 # It runs on the main thread and imports the sensor driver
 
+CACHE_DB_PATH = os.path.join(os.path.dirname(__file__), "telemetry_cache.db")
+LORA_PORT_CANDIDATES = ['/dev/ttyACM0', '/dev/ttyUSB0', '/dev/ttyACM1', '/dev/ttyUSB1']
+CACHE_BURST_LIMIT = 50
+
+class TelemetryCache:
+    def __init__(self, db_path: str = CACHE_DB_PATH):
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS telemetry_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                payload TEXT NOT NULL,
+                created_at REAL NOT NULL
+            )
+            """
+        )
+        self.conn.commit()
+
+    def enqueue(self, payload: str):
+        self.conn.execute(
+            "INSERT INTO telemetry_cache (payload, created_at) VALUES (?, ?)",
+            (payload, time.time()),
+        )
+        self.conn.commit()
+
+    def get_batch(self, limit: int):
+        cur = self.conn.execute(
+            "SELECT id, payload FROM telemetry_cache ORDER BY id ASC LIMIT ?",
+            (limit,),
+        )
+        return cur.fetchall()
+
+    def ack_ids(self, ids):
+        if not ids:
+            return
+        placeholders = ",".join(["?"] * len(ids))
+        self.conn.execute(f"DELETE FROM telemetry_cache WHERE id IN ({placeholders})", ids)
+        self.conn.commit()
+
+    def size(self) -> int:
+        cur = self.conn.execute("SELECT COUNT(*) FROM telemetry_cache")
+        return int(cur.fetchone()[0])
+
+    def close(self):
+        self.conn.close()
+
+def connect_lora_module():
+    for port in LORA_PORT_CANDIDATES:
+        try:
+            lora_serial = serial.Serial(port, 115200, timeout=1)
+            print(f"[SYSTEM] Connected to LoRa module on {port}")
+            return lora_serial
+        except serial.SerialException:
+            continue
+    return None
+
 def main(train_id="T01"):
+    from ultrasonic import SonarSensor
+    from mqtt import MqttSubscriberThread
     # This file represents your "Main Application Logic"
     
     # Initialize the sensor (starts its own background thread)
@@ -14,25 +72,13 @@ def main(train_id="T01"):
     sensor2 = SonarSensor(trig_pin=17, echo_pin=27) # 2nd seat
     
     # Initialize Serial connection to LoRa module (PlatformIO device)
-    lora_serial = None
-    try:
-        # Common ports for Arduino/PlatformIO devices on Raspbian
-        port_candidates = ['/dev/ttyACM0', '/dev/ttyUSB0', '/dev/ttyACM1', '/dev/ttyUSB1']
-        for port in port_candidates:
-            try:
-                lora_serial = serial.Serial(port, 115200, timeout=1)
-                print(f"[SYSTEM] Connected to LoRa module on {port}")
-                break
-            except serial.SerialException:
-                pass
-        
-        if not lora_serial:
-            print("[WARNING] No LoRa module found on standard ports. Running in Simulation Mode.")
-    except Exception as e:
-        print(f"[ERROR] Serial setup failed: {e}")
+    lora_serial = connect_lora_module()
+    if not lora_serial:
+        print("[WARNING] No LoRa module found on standard ports. Running in cache-and-retry mode.")
 
     # Create a Queue to hold the data from MQTT
     mqtt_queue = queue.Queue(maxsize=20)
+    cache = TelemetryCache()
 
     try:
         sensor1.start()
@@ -163,15 +209,34 @@ def main(train_id="T01"):
         #     print(f"   L Interpretation: {status_desc} (<20cm is TAKEN)")
         # ==== XK's ====
             
-            # Send to LoRa module if connected
+            if lora_serial is None:
+                lora_serial = connect_lora_module()
+
+            # Send cached packets first when link is up, then current packet.
+            sent_current = False
             if lora_serial:
                 try:
+                    flushed = 0
+                    while True:
+                        batch = cache.get_batch(CACHE_BURST_LIMIT)
+                        if not batch:
+                            break
+                        sent_ids = []
+                        for row_id, payload in batch:
+                            lora_serial.write((payload + '\n').encode('utf-8'))
+                            sent_ids.append(row_id)
+                            flushed += 1
+                        cache.ack_ids(sent_ids)
+                    if flushed:
+                        print(f"[CACHE] Replayed {flushed} cached telemetry packets.")
+
                     print(msg)
                     cabin_ultra_poll_done_ns = time.time_ns()
                     cabin_ultra_poll_done_perf_ns = time.perf_counter_ns()
                     lora_serial.write((msg + '\n').encode('utf-8'))
                     cabin_lora_tx_done_ns = time.time_ns()
                     cabin_lora_tx_done_perf_ns = time.perf_counter_ns()
+                    sent_current = True
                     if message_data is not None and message_data.get("msg_id"):
                         print(
                             f"[E2E_LOG][CABIN] msg_id={message_data['msg_id']} "
@@ -182,6 +247,15 @@ def main(train_id="T01"):
                         )
                 except Exception as e:
                     print(f"   [ERROR] LoRa Write Failed: {e}")
+                    try:
+                        lora_serial.close()
+                    except Exception:
+                        pass
+                    lora_serial = None
+
+            if not sent_current:
+                cache.enqueue(msg)
+                print(f"[CACHE] Stored packet locally (pending={cache.size()}).")
 
             time.sleep(20)
             
@@ -193,6 +267,7 @@ def main(train_id="T01"):
         sensor2.stop()
         if lora_serial:
             lora_serial.close()
+        cache.close()
 
 if __name__ == '__main__':
     # You can change this ID for different trains (e.g. T02, T03)

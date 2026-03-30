@@ -316,6 +316,10 @@ Current scope notes:
     - `DEGRADED` (>30 s without packet),
     - `OFFLINE` (>60 s without packet),
     - `WAITING` (train arrived but no packet yet).
+- Cabin Pi LoRa disconnect fallback:
+  - Cabin now writes unsent telemetry to local SQLite (`Ultrasonic_Pi/telemetry_cache.db`) when LoRa is unavailable.
+  - On reconnect, Cabin replays cached packets in FIFO bursts before sending the newest packet.
+  - This provides store-and-forward behavior during temporary LoRa outages.
 - Station Pi failure:
   - Current behavior is best-effort send from Cabin; if Station is down, packets are not durably buffered for later replay in this Python path.
   - For guaranteed replay, add explicit durable store-and-forward (not currently implemented).
